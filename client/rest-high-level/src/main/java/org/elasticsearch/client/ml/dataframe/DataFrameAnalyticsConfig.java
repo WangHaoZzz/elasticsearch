@@ -20,7 +20,7 @@
 package org.elasticsearch.client.ml.dataframe;
 
 import org.elasticsearch.Version;
-import org.elasticsearch.client.dataframe.transforms.util.TimeUtil;
+import org.elasticsearch.client.common.TimeUtil;
 import org.elasticsearch.common.Nullable;
 import org.elasticsearch.common.ParseField;
 import org.elasticsearch.common.Strings;
@@ -43,23 +43,27 @@ public class DataFrameAnalyticsConfig implements ToXContentObject {
         return PARSER.apply(parser, null).build();
     }
 
-    public static Builder builder(String id) {
-        return new Builder().setId(id);
+    public static Builder builder() {
+        return new Builder();
     }
 
-    private static final ParseField ID = new ParseField("id");
-    private static final ParseField SOURCE = new ParseField("source");
-    private static final ParseField DEST = new ParseField("dest");
-    private static final ParseField ANALYSIS = new ParseField("analysis");
-    private static final ParseField ANALYZED_FIELDS = new ParseField("analyzed_fields");
-    private static final ParseField MODEL_MEMORY_LIMIT = new ParseField("model_memory_limit");
-    private static final ParseField CREATE_TIME = new ParseField("create_time");
-    private static final ParseField VERSION = new ParseField("version");
+    static final ParseField ID = new ParseField("id");
+    static final ParseField DESCRIPTION = new ParseField("description");
+    static final ParseField SOURCE = new ParseField("source");
+    static final ParseField DEST = new ParseField("dest");
+    static final ParseField ANALYSIS = new ParseField("analysis");
+    static final ParseField ANALYZED_FIELDS = new ParseField("analyzed_fields");
+    static final ParseField MODEL_MEMORY_LIMIT = new ParseField("model_memory_limit");
+    static final ParseField CREATE_TIME = new ParseField("create_time");
+    static final ParseField VERSION = new ParseField("version");
+    static final ParseField ALLOW_LAZY_START = new ParseField("allow_lazy_start");
+    static final ParseField MAX_NUM_THREADS = new ParseField("max_num_threads");
 
-    private static ObjectParser<Builder, Void> PARSER = new ObjectParser<>("data_frame_analytics_config", true, Builder::new);
+    private static final ObjectParser<Builder, Void> PARSER = new ObjectParser<>("data_frame_analytics_config", true, Builder::new);
 
     static {
         PARSER.declareString(Builder::setId, ID);
+        PARSER.declareString(Builder::setDescription, DESCRIPTION);
         PARSER.declareObject(Builder::setSource, (p, c) -> DataFrameAnalyticsSource.fromXContent(p), SOURCE);
         PARSER.declareObject(Builder::setDest, (p, c) -> DataFrameAnalyticsDest.fromXContent(p), DEST);
         PARSER.declareObject(Builder::setAnalysis, (p, c) -> parseAnalysis(p), ANALYSIS);
@@ -75,15 +79,9 @@ public class DataFrameAnalyticsConfig implements ToXContentObject {
             p -> TimeUtil.parseTimeFieldToInstant(p, CREATE_TIME.getPreferredName()),
             CREATE_TIME,
             ValueType.VALUE);
-        PARSER.declareField(Builder::setVersion,
-            p -> {
-                if (p.currentToken() == XContentParser.Token.VALUE_STRING) {
-                    return Version.fromString(p.text());
-                }
-                throw new IllegalArgumentException("Unsupported token [" + p.currentToken() + "]");
-            },
-            VERSION,
-            ValueType.STRING);
+        PARSER.declareString(Builder::setVersion, Version::fromString, VERSION);
+        PARSER.declareBoolean(Builder::setAllowLazyStart, ALLOW_LAZY_START);
+        PARSER.declareInt(Builder::setMaxNumThreads, MAX_NUM_THREADS);
     }
 
     private static DataFrameAnalysis parseAnalysis(XContentParser parser) throws IOException {
@@ -95,6 +93,7 @@ public class DataFrameAnalyticsConfig implements ToXContentObject {
     }
 
     private final String id;
+    private final String description;
     private final DataFrameAnalyticsSource source;
     private final DataFrameAnalyticsDest dest;
     private final DataFrameAnalysis analysis;
@@ -102,22 +101,33 @@ public class DataFrameAnalyticsConfig implements ToXContentObject {
     private final ByteSizeValue modelMemoryLimit;
     private final Instant createTime;
     private final Version version;
+    private final Boolean allowLazyStart;
+    private final Integer maxNumThreads;
 
-    private DataFrameAnalyticsConfig(String id, DataFrameAnalyticsSource source, DataFrameAnalyticsDest dest, DataFrameAnalysis analysis,
+    private DataFrameAnalyticsConfig(@Nullable String id, @Nullable String description, @Nullable DataFrameAnalyticsSource source,
+                                     @Nullable DataFrameAnalyticsDest dest, @Nullable DataFrameAnalysis analysis,
                                      @Nullable FetchSourceContext analyzedFields, @Nullable ByteSizeValue modelMemoryLimit,
-                                     @Nullable Instant createTime, @Nullable Version version) {
-        this.id = Objects.requireNonNull(id);
-        this.source = Objects.requireNonNull(source);
-        this.dest = Objects.requireNonNull(dest);
-        this.analysis = Objects.requireNonNull(analysis);
+                                     @Nullable Instant createTime, @Nullable Version version, @Nullable Boolean allowLazyStart,
+                                     @Nullable Integer maxNumThreads) {
+        this.id = id;
+        this.description = description;
+        this.source = source;
+        this.dest = dest;
+        this.analysis = analysis;
         this.analyzedFields = analyzedFields;
         this.modelMemoryLimit = modelMemoryLimit;
         this.createTime = createTime == null ? null : Instant.ofEpochMilli(createTime.toEpochMilli());;
         this.version = version;
+        this.allowLazyStart = allowLazyStart;
+        this.maxNumThreads = maxNumThreads;
     }
 
     public String getId() {
         return id;
+    }
+
+    public String getDescription() {
+        return description;
     }
 
     public DataFrameAnalyticsSource getSource() {
@@ -148,15 +158,35 @@ public class DataFrameAnalyticsConfig implements ToXContentObject {
         return version;
     }
 
+    public Boolean getAllowLazyStart() {
+        return allowLazyStart;
+    }
+
+    public Integer getMaxNumThreads() {
+        return maxNumThreads;
+    }
+
     @Override
     public XContentBuilder toXContent(XContentBuilder builder, Params params) throws IOException {
         builder.startObject();
-        builder.field(ID.getPreferredName(), id);
-        builder.field(SOURCE.getPreferredName(), source);
-        builder.field(DEST.getPreferredName(), dest);
-        builder.startObject(ANALYSIS.getPreferredName());
-        builder.field(analysis.getName(), analysis);
-        builder.endObject();
+        if (id != null) {
+            builder.field(ID.getPreferredName(), id);
+        }
+        if (description != null) {
+            builder.field(DESCRIPTION.getPreferredName(), description);
+        }
+        if (source != null) {
+            builder.field(SOURCE.getPreferredName(), source);
+        }
+        if (dest != null) {
+            builder.field(DEST.getPreferredName(), dest);
+        }
+        if (analysis != null) {
+            builder
+                .startObject(ANALYSIS.getPreferredName())
+                .field(analysis.getName(), analysis)
+                .endObject();
+        }
         if (analyzedFields != null) {
             builder.field(ANALYZED_FIELDS.getPreferredName(), analyzedFields);
         }
@@ -169,6 +199,12 @@ public class DataFrameAnalyticsConfig implements ToXContentObject {
         if (version != null) {
             builder.field(VERSION.getPreferredName(), version);
         }
+        if (allowLazyStart != null) {
+            builder.field(ALLOW_LAZY_START.getPreferredName(), allowLazyStart);
+        }
+        if (maxNumThreads != null) {
+            builder.field(MAX_NUM_THREADS.getPreferredName(), maxNumThreads);
+        }
         builder.endObject();
         return builder;
     }
@@ -180,18 +216,22 @@ public class DataFrameAnalyticsConfig implements ToXContentObject {
 
         DataFrameAnalyticsConfig other = (DataFrameAnalyticsConfig) o;
         return Objects.equals(id, other.id)
+            && Objects.equals(description, other.description)
             && Objects.equals(source, other.source)
             && Objects.equals(dest, other.dest)
             && Objects.equals(analysis, other.analysis)
             && Objects.equals(analyzedFields, other.analyzedFields)
             && Objects.equals(modelMemoryLimit, other.modelMemoryLimit)
             && Objects.equals(createTime, other.createTime)
-            && Objects.equals(version, other.version);
+            && Objects.equals(version, other.version)
+            && Objects.equals(allowLazyStart, other.allowLazyStart)
+            && Objects.equals(maxNumThreads, other.maxNumThreads);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(id, source, dest, analysis, analyzedFields, modelMemoryLimit, createTime, version);
+        return Objects.hash(id, description, source, dest, analysis, analyzedFields, modelMemoryLimit, createTime, version, allowLazyStart,
+            maxNumThreads);
     }
 
     @Override
@@ -202,6 +242,7 @@ public class DataFrameAnalyticsConfig implements ToXContentObject {
     public static class Builder {
 
         private String id;
+        private String description;
         private DataFrameAnalyticsSource source;
         private DataFrameAnalyticsDest dest;
         private DataFrameAnalysis analysis;
@@ -209,11 +250,18 @@ public class DataFrameAnalyticsConfig implements ToXContentObject {
         private ByteSizeValue modelMemoryLimit;
         private Instant createTime;
         private Version version;
+        private Boolean allowLazyStart;
+        private Integer maxNumThreads;
 
         private Builder() {}
 
         public Builder setId(String id) {
             this.id = Objects.requireNonNull(id);
+            return this;
+        }
+
+        public Builder setDescription(String description) {
+            this.description = description;
             return this;
         }
 
@@ -242,18 +290,29 @@ public class DataFrameAnalyticsConfig implements ToXContentObject {
             return this;
         }
 
-        public Builder setCreateTime(Instant createTime) {
+        Builder setCreateTime(Instant createTime) {
             this.createTime = createTime;
             return this;
         }
 
-        public Builder setVersion(Version version) {
+        Builder setVersion(Version version) {
             this.version = version;
             return this;
         }
 
+        public Builder setAllowLazyStart(Boolean allowLazyStart) {
+            this.allowLazyStart = allowLazyStart;
+            return this;
+        }
+
+        public Builder setMaxNumThreads(Integer maxNumThreads) {
+            this.maxNumThreads = maxNumThreads;
+            return this;
+        }
+
         public DataFrameAnalyticsConfig build() {
-            return new DataFrameAnalyticsConfig(id, source, dest, analysis, analyzedFields, modelMemoryLimit, createTime, version);
+            return new DataFrameAnalyticsConfig(id, description, source, dest, analysis, analyzedFields, modelMemoryLimit, createTime,
+                version, allowLazyStart, maxNumThreads);
         }
     }
 }

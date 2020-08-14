@@ -5,24 +5,23 @@
 ++++
 
 Wraps a <<query-dsl-bool-query, filter query>> and returns every matching
-document with a <<query-filter-context, relevance score>> equal to the `boost`
+document with a <<relevance-scores,relevance score>> equal to the `boost`
 parameter value.
 
-[source,js]
+[source,console]
 ----
 GET /_search
 {
-    "query": {
-        "constant_score" : {
-            "filter" : {
-                "term" : { "user" : "kimchy"}
-            },
-            "boost" : 1.2
-        }
+  "query": {
+    "constant_score": {
+      "filter": {
+        "term": { "user.id": "kimchy" }
+      },
+      "boost": 1.2
     }
+  }
 }
 ----
-// CONSOLE
 
 [[constant-score-top-level-params]]
 ==== Top-level parameters for `constant_score`
@@ -32,11 +31,11 @@ GET /_search
 (Required, query object) <<query-dsl-bool-query, Filter query>> you wish to run.
 Any returned documents must match this query.
 
-Filter queries do not calculate <<query-filter-context, relevance scores>>. To
+Filter queries do not calculate <<relevance-scores,relevance scores>>. To
 speed up performance, {es} automatically caches frequently used filter queries.
 --
 
 `boost`::
 (Optional, float) Floating point number used as the constant
-<<query-filter-context, relevance score>> for every document matching the
+<<relevance-scores,relevance score>> for every document matching the
 `filter` query. Defaults to `1.0`.

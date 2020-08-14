@@ -36,11 +36,16 @@ public class RegressionTests extends AbstractXContentTestCase<Regression> {
         return new NamedXContentRegistry(new MlEvaluationNamedXContentProvider().getNamedXContentParsers());
     }
 
-    @Override
-    protected Regression createTestInstance() {
+    public static Regression createRandom() {
         List<EvaluationMetric> metrics = new ArrayList<>();
         if (randomBoolean()) {
             metrics.add(new MeanSquaredErrorMetric());
+        }
+        if (randomBoolean()) {
+            metrics.add(new MeanSquaredLogarithmicErrorMetricTests().createTestInstance());
+        }
+        if (randomBoolean()) {
+            metrics.add(new HuberMetricTests().createTestInstance());
         }
         if (randomBoolean()) {
             metrics.add(new RSquaredMetric());
@@ -48,6 +53,11 @@ public class RegressionTests extends AbstractXContentTestCase<Regression> {
         return randomBoolean() ?
             new Regression(randomAlphaOfLength(10), randomAlphaOfLength(10)) :
             new Regression(randomAlphaOfLength(10), randomAlphaOfLength(10), metrics.isEmpty() ? null : metrics);
+    }
+
+    @Override
+    protected Regression createTestInstance() {
+        return createRandom();
     }
 
     @Override

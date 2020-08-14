@@ -32,9 +32,12 @@ import org.elasticsearch.common.lease.Releasable;
 import org.elasticsearch.common.settings.Setting;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.unit.TimeValue;
+import org.elasticsearch.monitor.NodeHealthService;
+import org.elasticsearch.monitor.StatusInfo;
 import org.elasticsearch.threadpool.ThreadPool.Names;
 import org.elasticsearch.transport.ConnectTransportException;
 import org.elasticsearch.transport.NodeDisconnectedException;
+import org.elasticsearch.transport.Transport;
 import org.elasticsearch.transport.TransportConnectionListener;
 import org.elasticsearch.transport.TransportException;
 import org.elasticsearch.transport.TransportRequest;
@@ -52,6 +55,8 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
+import static org.elasticsearch.monitor.StatusInfo.Status.UNHEALTHY;
+
 /**
  * The LeaderChecker is responsible for allowing followers to check that the currently elected leader is still connected and healthy. We are
  * fairly lenient, possibly allowing multiple checks to fail before considering the leader to be faulty, to allow for the leader to
@@ -62,7 +67,7 @@ public class LeaderChecker {
 
     private static final Logger logger = LogManager.getLogger(LeaderChecker.class);
 
-    public static final String LEADER_CHECK_ACTION_NAME = "internal:coordination/fault_detection/leader_check";
+    static final String LEADER_CHECK_ACTION_NAME = "internal:coordination/fault_detection/leader_check";
 
     // the time between checks sent to the leader
     public static final Setting<TimeValue> LEADER_CHECK_INTERVAL_SETTING =
@@ -83,17 +88,20 @@ public class LeaderChecker {
     private final int leaderCheckRetryCount;
     private final TransportService transportService;
     private final Consumer<Exception> onLeaderFailure;
+    private final NodeHealthService nodeHealthService;
 
     private AtomicReference<CheckScheduler> currentChecker = new AtomicReference<>();
 
     private volatile DiscoveryNodes discoveryNodes;
 
-    public LeaderChecker(final Settings settings, final TransportService transportService, final Consumer<Exception> onLeaderFailure) {
+    LeaderChecker(final Settings settings, final TransportService transportService, final Consumer<Exception> onLeaderFailure,
+                  NodeHealthService nodeHealthService) {
         leaderCheckInterval = LEADER_CHECK_INTERVAL_SETTING.get(settings);
         leaderCheckTimeout = LEADER_CHECK_TIMEOUT_SETTING.get(settings);
         leaderCheckRetryCount = LEADER_CHECK_RETRY_COUNT_SETTING.get(settings);
         this.transportService = transportService;
         this.onLeaderFailure = onLeaderFailure;
+        this.nodeHealthService = nodeHealthService;
 
         transportService.registerRequestHandler(LEADER_CHECK_ACTION_NAME, Names.SAME, false, false, LeaderCheckRequest::new,
             (request, channel, task) -> {
@@ -103,7 +111,7 @@ public class LeaderChecker {
 
         transportService.addConnectionListener(new TransportConnectionListener() {
             @Override
-            public void onNodeDisconnected(DiscoveryNode node) {
+            public void onNodeDisconnected(DiscoveryNode node, Transport.Connection connection) {
                 handleDisconnectedNode(node);
             }
         });
@@ -119,7 +127,7 @@ public class LeaderChecker {
      *
      * @param leader the node to be checked as leader, or null if checks should be disabled
      */
-    public void updateLeader(@Nullable final DiscoveryNode leader) {
+    void updateLeader(@Nullable final DiscoveryNode leader) {
         assert transportService.getLocalNode().equals(leader) == false;
         final CheckScheduler checkScheduler;
         if (leader != null) {
@@ -139,12 +147,8 @@ public class LeaderChecker {
     /**
      * Update the "known" discovery nodes. Should be called on the leader before a new cluster state is published to reflect the new
      * publication targets, and also called if a leader becomes a non-leader.
-     * TODO if heartbeats can make nodes become followers then this needs to be called before a heartbeat is sent to a new node too.
-     * <p>
-     * isLocalNodeElectedMaster() should reflect whether this node is a leader, and nodeExists()
-     * should indicate whether nodes are known publication targets or not.
      */
-    public void setCurrentNodes(DiscoveryNodes discoveryNodes) {
+    void setCurrentNodes(DiscoveryNodes discoveryNodes) {
         logger.trace("setCurrentNodes: {}", discoveryNodes);
         this.discoveryNodes = discoveryNodes;
     }
@@ -157,13 +161,20 @@ public class LeaderChecker {
     private void handleLeaderCheck(LeaderCheckRequest request) {
         final DiscoveryNodes discoveryNodes = this.discoveryNodes;
         assert discoveryNodes != null;
-
-        if (discoveryNodes.isLocalNodeElectedMaster() == false) {
-            logger.debug("non-master handling {}", request);
-            throw new CoordinationStateRejectedException("non-leader rejecting leader check");
+        final StatusInfo statusInfo = nodeHealthService.getHealth();
+        if (statusInfo.getStatus() == UNHEALTHY) {
+            final String message = "rejecting leader check from [" + request.getSender() + "] " +
+                "since node is unhealthy [" + statusInfo.getInfo() + "]";
+            logger.debug(message);
+            throw new NodeHealthCheckFailureException(message);
+        } else if (discoveryNodes.isLocalNodeElectedMaster() == false) {
+            logger.debug("rejecting leader check on non-master {}", request);
+            throw new CoordinationStateRejectedException(
+                "rejecting leader check from [" + request.getSender() + "] sent to a node that is no longer the master");
         } else if (discoveryNodes.nodeExists(request.getSender()) == false) {
-            logger.debug("leader check from unknown node: {}", request);
-            throw new CoordinationStateRejectedException("leader check from unknown node");
+            logger.debug("rejecting leader check from removed node: {}", request);
+            throw new CoordinationStateRejectedException(
+                "rejecting leader check since [" + request.getSender() + "] has been removed from the cluster");
         } else {
             logger.trace("handling {}", request);
         }
@@ -238,8 +249,12 @@ public class LeaderChecker {
                                 "leader [{}] disconnected during check", leader), exp);
                             leaderFailed(new ConnectTransportException(leader, "disconnected during check", exp));
                             return;
+                        } else if (exp.getCause() instanceof NodeHealthCheckFailureException) {
+                            logger.debug(new ParameterizedMessage(
+                                "leader [{}] health check failed", leader), exp);
+                            leaderFailed(new NodeHealthCheckFailureException("node [" + leader + "] failed health checks", exp));
+                            return;
                         }
-
                         long failureCount = failureCountSinceLastSuccess.incrementAndGet();
                         if (failureCount >= leaderCheckRetryCount) {
                             logger.debug(new ParameterizedMessage(
@@ -303,15 +318,15 @@ public class LeaderChecker {
         }
     }
 
-    public static class LeaderCheckRequest extends TransportRequest {
+    static class LeaderCheckRequest extends TransportRequest {
 
         private final DiscoveryNode sender;
 
-        public LeaderCheckRequest(final DiscoveryNode sender) {
+        LeaderCheckRequest(final DiscoveryNode sender) {
             this.sender = sender;
         }
 
-        public LeaderCheckRequest(final StreamInput in) throws IOException {
+        LeaderCheckRequest(final StreamInput in) throws IOException {
             super(in);
             sender = new DiscoveryNode(in);
         }

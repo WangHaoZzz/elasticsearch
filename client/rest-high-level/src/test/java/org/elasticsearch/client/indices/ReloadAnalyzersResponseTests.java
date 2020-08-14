@@ -22,6 +22,7 @@ package org.elasticsearch.client.indices;
 import org.elasticsearch.action.support.DefaultShardOperationFailedException;
 import org.elasticsearch.client.AbstractResponseTestCase;
 import org.elasticsearch.common.xcontent.XContentParser;
+import org.elasticsearch.common.xcontent.XContentType;
 import org.elasticsearch.index.seqno.RetentionLeaseNotFoundException;
 import org.elasticsearch.xpack.core.action.ReloadAnalyzersResponse.ReloadDetails;
 
@@ -38,7 +39,7 @@ import java.util.Set;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.hasSize;
-import static org.hamcrest.Matchers.isIn;
+import static org.hamcrest.Matchers.in;
 
 public class ReloadAnalyzersResponseTests
         extends AbstractResponseTestCase<org.elasticsearch.xpack.core.action.ReloadAnalyzersResponse, ReloadAnalyzersResponse> {
@@ -48,7 +49,7 @@ public class ReloadAnalyzersResponseTests
     private Set<Integer> shardIds;
 
     @Override
-    protected org.elasticsearch.xpack.core.action.ReloadAnalyzersResponse createServerTestInstance() {
+    protected org.elasticsearch.xpack.core.action.ReloadAnalyzersResponse createServerTestInstance(XContentType xContentType) {
         index = randomAlphaOfLength(8);
         id = randomAlphaOfLength(8);
         final int total = randomIntBetween(1, 16);
@@ -93,7 +94,7 @@ public class ReloadAnalyzersResponseTests
         if (clientInstance.shards().failed() > 0) {
             final DefaultShardOperationFailedException groupedFailure = clientInstance.shards().failures().iterator().next();
             assertThat(groupedFailure.index(), equalTo(index));
-            assertThat(groupedFailure.shardId(), isIn(shardIds));
+            assertThat(groupedFailure.shardId(), in(shardIds));
             assertThat(groupedFailure.reason(), containsString("reason=retention lease with ID [" + id + "] not found"));
         }
         Map<String, ReloadDetails> serverDetails = serverTestInstance.getReloadDetails();

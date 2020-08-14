@@ -19,12 +19,15 @@
 
 package org.elasticsearch.action.admin.indices.forcemerge;
 
+import org.elasticsearch.Version;
 import org.elasticsearch.action.ActionRequestValidationException;
 import org.elasticsearch.action.support.broadcast.BroadcastRequest;
+import org.elasticsearch.common.UUIDs;
 import org.elasticsearch.common.io.stream.StreamInput;
 import org.elasticsearch.common.io.stream.StreamOutput;
 
 import java.io.IOException;
+import java.util.Arrays;
 
 import static org.elasticsearch.action.ValidateActions.addValidationError;
 
@@ -52,6 +55,14 @@ public class ForceMergeRequest extends BroadcastRequest<ForceMergeRequest> {
     private boolean onlyExpungeDeletes = Defaults.ONLY_EXPUNGE_DELETES;
     private boolean flush = Defaults.FLUSH;
 
+    private static final Version FORCE_MERGE_UUID_SIMPLE_VERSION = Version.V_8_0_0;
+
+    /**
+     * Force merge UUID to store in the live commit data of a shard under
+     * {@link org.elasticsearch.index.engine.Engine#FORCE_MERGE_UUID_KEY} after force merging it.
+     */
+    private final String forceMergeUUID;
+
     /**
      * Constructs a merge request over one or more indices.
      *
@@ -59,6 +70,7 @@ public class ForceMergeRequest extends BroadcastRequest<ForceMergeRequest> {
      */
     public ForceMergeRequest(String... indices) {
         super(indices);
+        forceMergeUUID = UUIDs.randomBase64UUID();
     }
 
     public ForceMergeRequest(StreamInput in) throws IOException {
@@ -66,6 +78,12 @@ public class ForceMergeRequest extends BroadcastRequest<ForceMergeRequest> {
         maxNumSegments = in.readInt();
         onlyExpungeDeletes = in.readBoolean();
         flush = in.readBoolean();
+        if (in.getVersion().onOrAfter(FORCE_MERGE_UUID_SIMPLE_VERSION)) {
+            forceMergeUUID = in.readString();
+        } else {
+            forceMergeUUID = in.readOptionalString();
+            assert forceMergeUUID != null : "optional was just used as a BwC measure";
+        }
     }
 
     /**
@@ -103,6 +121,13 @@ public class ForceMergeRequest extends BroadcastRequest<ForceMergeRequest> {
     }
 
     /**
+     * Force merge UUID to use when force merging.
+     */
+    public String forceMergeUUID() {
+        return forceMergeUUID;
+    }
+
+    /**
      * Should flush be performed after the merge. Defaults to {@code true}.
      */
     public boolean flush() {
@@ -118,11 +143,24 @@ public class ForceMergeRequest extends BroadcastRequest<ForceMergeRequest> {
     }
 
     @Override
+    public String getDescription() {
+        return "Force-merge indices " + Arrays.toString(indices()) +
+            ", maxSegments[" + maxNumSegments +
+            "], onlyExpungeDeletes[" + onlyExpungeDeletes +
+            "], flush[" + flush + "]";
+    }
+
+    @Override
     public void writeTo(StreamOutput out) throws IOException {
         super.writeTo(out);
         out.writeInt(maxNumSegments);
         out.writeBoolean(onlyExpungeDeletes);
         out.writeBoolean(flush);
+        if (out.getVersion().onOrAfter(FORCE_MERGE_UUID_SIMPLE_VERSION)) {
+            out.writeString(forceMergeUUID);
+        } else {
+            out.writeOptionalString(forceMergeUUID);
+        }
     }
 
     @Override

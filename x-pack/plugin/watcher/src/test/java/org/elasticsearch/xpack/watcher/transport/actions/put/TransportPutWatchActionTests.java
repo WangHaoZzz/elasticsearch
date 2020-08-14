@@ -14,7 +14,7 @@ import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.util.concurrent.ThreadContext;
 import org.elasticsearch.index.Index;
 import org.elasticsearch.index.shard.ShardId;
-import org.elasticsearch.license.XPackLicenseState;
+import org.elasticsearch.license.TestUtils;
 import org.elasticsearch.protocol.xpack.watcher.PutWatchRequest;
 import org.elasticsearch.test.ESTestCase;
 import org.elasticsearch.threadpool.ThreadPool;
@@ -70,13 +70,13 @@ public class TransportPutWatchActionTests extends ESTestCase {
             ActionListener<IndexResponse> listener = (ActionListener) invocation.getArguments()[2];
 
             ShardId shardId = new ShardId(new Index(Watch.INDEX, "uuid"), 0);
-            listener.onResponse(new IndexResponse(shardId, request.type(), request.id(), 1, 1, 1, true));
+            listener.onResponse(new IndexResponse(shardId, request.id(), 1, 1, 1, true));
 
             return null;
         }).when(client).execute(any(), any(), any());
 
         action = new TransportPutWatchAction(transportService, threadPool, new ActionFilters(Collections.emptySet()),
-            new ClockHolder(new ClockMock()), new XPackLicenseState(Settings.EMPTY), parser, client);
+            new ClockHolder(new ClockMock()), TestUtils.newTestLicenseState(), parser, client);
     }
 
     public void testHeadersAreFilteredWhenPuttingWatches() throws Exception {

@@ -75,7 +75,9 @@ public class VerifyNodeRepositoryAction {
         final List<DiscoveryNode> nodes = new ArrayList<>();
         for (ObjectCursor<DiscoveryNode> cursor : masterAndDataNodes) {
             DiscoveryNode node = cursor.value;
-            nodes.add(node);
+            if (RepositoriesService.isDedicatedVotingOnlyNode(node.getRoles()) == false) {
+                nodes.add(node);
+            }
         }
         final CopyOnWriteArrayList<VerificationFailure> errors = new CopyOnWriteArrayList<>();
         final AtomicInteger counter = new AtomicInteger(nodes.size());
@@ -115,7 +117,11 @@ public class VerifyNodeRepositoryAction {
     private static void finishVerification(String repositoryName, ActionListener<List<DiscoveryNode>> listener, List<DiscoveryNode> nodes,
                                    CopyOnWriteArrayList<VerificationFailure> errors) {
         if (errors.isEmpty() == false) {
-            listener.onFailure(new RepositoryVerificationException(repositoryName, errors.toString()));
+            RepositoryVerificationException e = new RepositoryVerificationException(repositoryName, errors.toString());
+            for (VerificationFailure error : errors) {
+                e.addSuppressed(error.getCause());
+            }
+            listener.onFailure(e);
         } else {
             listener.onResponse(nodes);
         }

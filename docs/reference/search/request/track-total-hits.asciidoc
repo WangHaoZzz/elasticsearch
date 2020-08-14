@@ -1,5 +1,6 @@
-[[request-body-search-track-total-hits]]
-==== Track total hits
+[discrete]
+[[track-total-hits]]
+=== Track total hits
 
 Generally the total hit count can't be computed accurately without visiting all
 matches, which is costly for queries that match lots of documents. The
@@ -19,37 +20,36 @@ should be interpreted. A value of `"gte"` means that the `"total.value"` is a
 lower bound of the total hits that match the query and a value of `"eq"` indicates
 that `"total.value"` is the accurate count.
 
-[source,js]
+[source,console]
 --------------------------------------------------
-GET twitter/_search
+GET my-index-000001/_search
 {
-    "track_total_hits": true,
-     "query": {
-        "match" : {
-            "message" : "Elasticsearch"
-        }
-     }
+  "track_total_hits": true,
+    "query": {
+      "match" : {
+        "user.id" : "elkbee"
+      }
+    }
 }
 --------------------------------------------------
-// TEST[setup:twitter]
-// CONSOLE
+// TEST[setup:my_index]
 
 \... returns:
 
-[source,js]
+[source,console-result]
 --------------------------------------------------
 {
-    "_shards": ...
-    "timed_out": false,
-    "took": 100,
-    "hits": {
-        "max_score": 1.0,
-        "total" : {
-            "value": 2048,    <1>
-            "relation": "eq"  <2>
-        },
-        "hits": ...
-    }
+  "_shards": ...
+  "timed_out": false,
+  "took": 100,
+  "hits": {
+    "max_score": 1.0,
+    "total" : {
+      "value": 2048,    <1>
+      "relation": "eq"  <2>
+    },
+    "hits": ...
+  }
 }
 --------------------------------------------------
 // TESTRESPONSE[s/"_shards": \.\.\./"_shards": "$body._shards",/]
@@ -65,19 +65,18 @@ It is also possible to set `track_total_hits` to an integer.
 For instance the following query will accurately track the total hit count that match
 the query up to 100 documents:
 
-[source,js]
+[source,console]
 --------------------------------------------------
-GET twitter/_search
+GET my-index-000001/_search
 {
-    "track_total_hits": 100,
-     "query": {
-        "match" : {
-            "message" : "Elasticsearch"
-        }
-     }
+  "track_total_hits": 100,
+  "query": {
+    "match": {
+      "user.id": "elkbee"
+    }
+  }
 }
 --------------------------------------------------
-// CONSOLE
 // TEST[continued]
 
 The `hits.total.relation` in the response will indicate if the
@@ -86,20 +85,20 @@ bound of the total (`"gte"`).
 
 For instance the following response:
 
-[source,js]
+[source,console-result]
 --------------------------------------------------
 {
-    "_shards": ...
-    "timed_out": false,
-    "took": 30,
-    "hits" : {
-        "max_score": 1.0,
-        "total" : {
-            "value": 42,         <1>
-            "relation": "eq"     <2>
-        },
-        "hits": ...
-    }
+  "_shards": ...
+  "timed_out": false,
+  "took": 30,
+  "hits": {
+    "max_score": 1.0,
+    "total": {
+      "value": 42,         <1>
+      "relation": "eq"     <2>
+    },
+    "hits": ...
+  }
 }
 --------------------------------------------------
 // TESTRESPONSE[s/"_shards": \.\.\./"_shards": "$body._shards",/]
@@ -114,26 +113,25 @@ For instance the following response:
 \... indicates that the number of hits returned in the `total`
 is accurate.
 
-If the total number of his that match the query is greater than the
+If the total number of hits that match the query is greater than the
 value set in `track_total_hits`, the total hits in the response
 will indicate that the returned value is a lower bound:
 
-[source,js]
+[source,console-result]
 --------------------------------------------------
 {
-    "_shards": ...
-    "hits" : {
-        "max_score": 1.0,
-        "total" : {
-            "value": 100,         <1>
-            "relation": "gte"     <2>
-        },
-        "hits": ...
-    }
+  "_shards": ...
+  "hits": {
+    "max_score": 1.0,
+    "total": {
+      "value": 100,         <1>
+      "relation": "gte"     <2>
+    },
+    "hits": ...
+  }
 }
 --------------------------------------------------
-// TESTRESPONSE
-// TEST[skip:response is already tested in the previous snippet]
+// TESTRESPONSE[skip:response is already tested in the previous snippet]
 
 <1> There are at least 100 documents that match the query
 <2> This is a lower bound (`"gte"`).
@@ -141,33 +139,32 @@ will indicate that the returned value is a lower bound:
 If you don't need to track the total number of hits at all you can improve query
 times by setting this option to `false`:
 
-[source,js]
+[source,console]
 --------------------------------------------------
-GET twitter/_search
+GET my-index-000001/_search
 {
-    "track_total_hits": false,
-     "query": {
-        "match" : {
-            "message" : "Elasticsearch"
-        }
-     }
+  "track_total_hits": false,
+  "query": {
+    "match": {
+      "user.id": "elkbee"
+    }
+  }
 }
 --------------------------------------------------
-// CONSOLE
 // TEST[continued]
 
 \... returns:
 
-[source,js]
+[source,console-result]
 --------------------------------------------------
 {
-    "_shards": ...
-    "timed_out": false,
-    "took": 10,
-    "hits" : { <1>
-        "max_score": 1.0,
-        "hits": ...
-    }
+  "_shards": ...
+  "timed_out": false,
+  "took": 10,
+  "hits": {             <1>
+    "max_score": 1.0,
+    "hits": ...
+  }
 }
 --------------------------------------------------
 // TESTRESPONSE[s/"_shards": \.\.\./"_shards": "$body._shards",/]

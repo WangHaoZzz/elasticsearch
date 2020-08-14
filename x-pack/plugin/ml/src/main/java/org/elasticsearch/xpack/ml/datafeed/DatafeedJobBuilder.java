@@ -8,17 +8,25 @@ package org.elasticsearch.xpack.ml.datafeed;
 import org.elasticsearch.ResourceNotFoundException;
 import org.elasticsearch.action.ActionListener;
 import org.elasticsearch.client.Client;
+import org.elasticsearch.client.ParentTaskAssigningClient;
+import org.elasticsearch.cluster.node.DiscoveryNode;
+import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.unit.TimeValue;
 import org.elasticsearch.common.xcontent.NamedXContentRegistry;
+import org.elasticsearch.license.RemoteClusterLicenseChecker;
+import org.elasticsearch.tasks.TaskId;
 import org.elasticsearch.xpack.core.action.util.QueryPage;
 import org.elasticsearch.xpack.core.ml.datafeed.DatafeedConfig;
 import org.elasticsearch.xpack.core.ml.datafeed.DatafeedJobValidator;
 import org.elasticsearch.xpack.core.ml.datafeed.DatafeedTimingStats;
 import org.elasticsearch.xpack.core.ml.job.config.DataDescription;
 import org.elasticsearch.xpack.core.ml.job.config.Job;
+import org.elasticsearch.xpack.core.ml.job.messages.Messages;
 import org.elasticsearch.xpack.core.ml.job.process.autodetect.state.DataCounts;
 import org.elasticsearch.xpack.core.ml.job.results.Bucket;
 import org.elasticsearch.xpack.core.ml.job.results.Result;
+import org.elasticsearch.xpack.core.ml.utils.ExceptionsHelper;
+import org.elasticsearch.xpack.ml.annotations.AnnotationPersister;
 import org.elasticsearch.xpack.ml.datafeed.delayeddatacheck.DelayedDataDetector;
 import org.elasticsearch.xpack.ml.datafeed.delayeddatacheck.DelayedDataDetectorFactory;
 import org.elasticsearch.xpack.ml.datafeed.extractor.DataExtractorFactory;
@@ -27,9 +35,10 @@ import org.elasticsearch.xpack.ml.job.persistence.BucketsQueryBuilder;
 import org.elasticsearch.xpack.ml.job.persistence.JobConfigProvider;
 import org.elasticsearch.xpack.ml.job.persistence.JobResultsPersister;
 import org.elasticsearch.xpack.ml.job.persistence.JobResultsProvider;
-import org.elasticsearch.xpack.ml.notifications.Auditor;
+import org.elasticsearch.xpack.ml.notifications.AnomalyDetectionAuditor;
 
 import java.util.Collections;
+import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
@@ -39,36 +48,45 @@ public class DatafeedJobBuilder {
 
     private final Client client;
     private final NamedXContentRegistry xContentRegistry;
-    private final Auditor auditor;
+    private final AnomalyDetectionAuditor auditor;
+    private final AnnotationPersister annotationPersister;
     private final Supplier<Long> currentTimeSupplier;
     private final JobConfigProvider jobConfigProvider;
     private final JobResultsProvider jobResultsProvider;
     private final DatafeedConfigProvider datafeedConfigProvider;
     private final JobResultsPersister jobResultsPersister;
+    private final boolean remoteClusterClient;
+    private final String nodeName;
 
-    public DatafeedJobBuilder(Client client, NamedXContentRegistry xContentRegistry, Auditor auditor, Supplier<Long> currentTimeSupplier,
+    public DatafeedJobBuilder(Client client, NamedXContentRegistry xContentRegistry, AnomalyDetectionAuditor auditor,
+                              AnnotationPersister annotationPersister, Supplier<Long> currentTimeSupplier,
                               JobConfigProvider jobConfigProvider, JobResultsProvider jobResultsProvider,
-                              DatafeedConfigProvider datafeedConfigProvider, JobResultsPersister jobResultsPersister) {
+                              DatafeedConfigProvider datafeedConfigProvider, JobResultsPersister jobResultsPersister, Settings settings,
+                              String nodeName) {
         this.client = client;
         this.xContentRegistry = Objects.requireNonNull(xContentRegistry);
         this.auditor = Objects.requireNonNull(auditor);
+        this.annotationPersister = Objects.requireNonNull(annotationPersister);
         this.currentTimeSupplier = Objects.requireNonNull(currentTimeSupplier);
         this.jobConfigProvider = Objects.requireNonNull(jobConfigProvider);
         this.jobResultsProvider = Objects.requireNonNull(jobResultsProvider);
         this.datafeedConfigProvider = Objects.requireNonNull(datafeedConfigProvider);
         this.jobResultsPersister = Objects.requireNonNull(jobResultsPersister);
+        this.remoteClusterClient = DiscoveryNode.isRemoteClusterClient(settings);
+        this.nodeName = nodeName;
     }
 
-    void build(String datafeedId, ActionListener<DatafeedJob> listener) {
+    void build(String datafeedId, TaskId parentTaskId, ActionListener<DatafeedJob> listener) {
         AtomicReference<Job> jobHolder = new AtomicReference<>();
         AtomicReference<DatafeedConfig> datafeedConfigHolder = new AtomicReference<>();
+        final ParentTaskAssigningClient parentTaskAssigningClient = new ParentTaskAssigningClient(client, parentTaskId);
 
         // Step 5. Build datafeed job object
         Consumer<Context> contextHanlder = context -> {
             TimeValue frequency = getFrequencyOrDefault(datafeedConfigHolder.get(), jobHolder.get(), xContentRegistry);
             TimeValue queryDelay = datafeedConfigHolder.get().getQueryDelay();
-            DelayedDataDetector delayedDataDetector =
-                    DelayedDataDetectorFactory.buildDetector(jobHolder.get(), datafeedConfigHolder.get(), client, xContentRegistry);
+            DelayedDataDetector delayedDataDetector = DelayedDataDetectorFactory.buildDetector(jobHolder.get(),
+                    datafeedConfigHolder.get(), parentTaskAssigningClient, xContentRegistry);
             DatafeedJob datafeedJob =
                 new DatafeedJob(
                     jobHolder.get().getId(),
@@ -77,12 +95,15 @@ public class DatafeedJobBuilder {
                     queryDelay.millis(),
                     context.dataExtractorFactory,
                     context.timingStatsReporter,
-                    client,
+                    parentTaskAssigningClient,
                     auditor,
+                    annotationPersister,
                     currentTimeSupplier,
                     delayedDataDetector,
+                    datafeedConfigHolder.get().getMaxEmptySearches(),
                     context.latestFinalBucketEndMs,
-                    context.latestRecordTimeMs);
+                    context.latestRecordTimeMs,
+                    context.haveSeenDataPreviously);
 
             listener.onResponse(datafeedJob);
         };
@@ -101,10 +122,11 @@ public class DatafeedJobBuilder {
         );
 
         // Create data extractor factory
-        Consumer<DatafeedTimingStats> datafeedTimingStatsHandler = timingStats -> {
-            context.timingStatsReporter = new DatafeedTimingStatsReporter(timingStats, jobResultsPersister);
+        Consumer<DatafeedTimingStats> datafeedTimingStatsHandler = initialTimingStats -> {
+            context.timingStatsReporter =
+                new DatafeedTimingStatsReporter(initialTimingStats, jobResultsPersister::persistDatafeedTimingStats);
             DataExtractorFactory.create(
-                client,
+                parentTaskAssigningClient,
                 datafeedConfigHolder.get(),
                 jobHolder.get(),
                 xContentRegistry,
@@ -116,6 +138,7 @@ public class DatafeedJobBuilder {
             if (dataCounts.getLatestRecordTimeStamp() != null) {
                 context.latestRecordTimeMs = dataCounts.getLatestRecordTimeStamp().getTime();
             }
+            context.haveSeenDataPreviously = (dataCounts.getInputRecordCount() > 0);
             jobResultsProvider.datafeedTimingStats(jobHolder.get().getId(), datafeedTimingStatsHandler, listener::onFailure);
         };
 
@@ -136,7 +159,7 @@ public class DatafeedJobBuilder {
                     .size(1)
                     .includeInterim(false);
             jobResultsProvider.bucketsViaInternalClient(jobId, latestBucketQuery, bucketsHandler, e -> {
-                if (e instanceof ResourceNotFoundException) {
+                if (ExceptionsHelper.unwrapCause(e) instanceof ResourceNotFoundException) {
                     QueryPage<Bucket> empty = new QueryPage<>(Collections.emptyList(), 0, Bucket.RESULT_TYPE_FIELD);
                     bucketsHandler.accept(empty);
                 } else {
@@ -166,6 +189,18 @@ public class DatafeedJobBuilder {
                 configBuilder -> {
                     try {
                         datafeedConfigHolder.set(configBuilder.build());
+                        if (remoteClusterClient == false) {
+                            List<String> remoteIndices = RemoteClusterLicenseChecker.remoteIndices(datafeedConfigHolder.get().getIndices());
+                            if (remoteIndices.isEmpty() == false) {
+                                listener.onFailure(
+                                    ExceptionsHelper.badRequestException(Messages.getMessage(
+                                        Messages.DATAFEED_NEEDS_REMOTE_CLUSTER_SEARCH,
+                                        configBuilder.getId(),
+                                        remoteIndices,
+                                        nodeName)));
+                                return;
+                            }
+                        }
                         jobConfigProvider.getJob(datafeedConfigHolder.get().getJobId(), jobConfigListener);
                     } catch (Exception e) {
                         listener.onFailure(e);
@@ -199,6 +234,7 @@ public class DatafeedJobBuilder {
     private static class Context {
         volatile long latestFinalBucketEndMs = -1L;
         volatile long latestRecordTimeMs = -1L;
+        volatile boolean haveSeenDataPreviously;
         volatile DataExtractorFactory dataExtractorFactory;
         volatile DatafeedTimingStatsReporter timingStatsReporter;
     }

@@ -22,7 +22,7 @@ package org.elasticsearch.search.internal;
 import org.apache.lucene.search.Collector;
 import org.apache.lucene.search.FieldDoc;
 import org.apache.lucene.search.Query;
-import org.elasticsearch.action.search.SearchTask;
+import org.elasticsearch.action.search.SearchShardTask;
 import org.elasticsearch.action.search.SearchType;
 import org.elasticsearch.common.Nullable;
 import org.elasticsearch.common.lease.Releasable;
@@ -49,12 +49,12 @@ import org.elasticsearch.search.dfs.DfsSearchResult;
 import org.elasticsearch.search.fetch.FetchPhase;
 import org.elasticsearch.search.fetch.FetchSearchResult;
 import org.elasticsearch.search.fetch.StoredFieldsContext;
-import org.elasticsearch.search.fetch.subphase.DocValueFieldsContext;
+import org.elasticsearch.search.fetch.subphase.FetchDocValuesContext;
+import org.elasticsearch.search.fetch.subphase.FetchFieldsContext;
 import org.elasticsearch.search.fetch.subphase.FetchSourceContext;
 import org.elasticsearch.search.fetch.subphase.InnerHitsContext;
 import org.elasticsearch.search.fetch.subphase.ScriptFieldsContext;
-import org.elasticsearch.search.fetch.subphase.highlight.SearchContextHighlight;
-import org.elasticsearch.search.lookup.SearchLookup;
+import org.elasticsearch.search.fetch.subphase.highlight.SearchHighlightContext;
 import org.elasticsearch.search.profile.Profilers;
 import org.elasticsearch.search.query.QuerySearchResult;
 import org.elasticsearch.search.rescore.RescoreContext;
@@ -93,9 +93,9 @@ public abstract class SearchContext extends AbstractRefCounted implements Releas
         super("search_context");
     }
 
-    public abstract void setTask(SearchTask task);
+    public abstract void setTask(SearchShardTask task);
 
-    public abstract SearchTask getTask();
+    public abstract SearchShardTask getTask();
 
     public abstract boolean isCancelled();
 
@@ -132,7 +132,7 @@ public abstract class SearchContext extends AbstractRefCounted implements Releas
      *  alias filters, types filters, etc. */
     public abstract Query buildFilteredQuery(Query query);
 
-    public abstract long id();
+    public abstract SearchContextId id();
 
     public abstract String source();
 
@@ -160,9 +160,9 @@ public abstract class SearchContext extends AbstractRefCounted implements Releas
 
     public abstract SearchExtBuilder getSearchExt(String name);
 
-    public abstract SearchContextHighlight highlight();
+    public abstract SearchHighlightContext highlight();
 
-    public abstract void highlight(SearchContextHighlight highlight);
+    public abstract void highlight(SearchHighlightContext highlight);
 
     public InnerHitsContext innerHits() {
         if (innerHitsContext == null) {
@@ -197,9 +197,19 @@ public abstract class SearchContext extends AbstractRefCounted implements Releas
 
     public abstract SearchContext fetchSourceContext(FetchSourceContext fetchSourceContext);
 
-    public abstract DocValueFieldsContext docValueFieldsContext();
+    public abstract FetchDocValuesContext docValuesContext();
 
-    public abstract SearchContext docValueFieldsContext(DocValueFieldsContext docValueFieldsContext);
+    public abstract SearchContext docValuesContext(FetchDocValuesContext docValuesContext);
+
+    /**
+     * The context related to retrieving fields.
+     */
+    public abstract FetchFieldsContext fetchFieldsContext();
+
+    /**
+     * Sets the context related to retrieving fields.
+     */
+    public abstract SearchContext fetchFieldsContext(FetchFieldsContext fetchFieldsContext);
 
     public abstract ContextIndexSearcher searcher();
 
@@ -330,10 +340,6 @@ public abstract class SearchContext extends AbstractRefCounted implements Releas
 
     public abstract void keepAlive(long keepAlive);
 
-    public SearchLookup lookup() {
-        return getQueryShardContext().lookup();
-    }
-
     public abstract DfsSearchResult dfsResult();
 
     public abstract QuerySearchResult queryResult();
@@ -388,9 +394,9 @@ public abstract class SearchContext extends AbstractRefCounted implements Releas
     }
 
     /**
-     * Looks up the given field, but does not restrict to fields in the types set on this context.
+     * Given the full name of a field, returns its {@link MappedFieldType}.
      */
-    public abstract MappedFieldType smartNameFieldType(String name);
+    public abstract MappedFieldType fieldType(String name);
 
     public abstract ObjectMapper getObjectMapper(String name);
 

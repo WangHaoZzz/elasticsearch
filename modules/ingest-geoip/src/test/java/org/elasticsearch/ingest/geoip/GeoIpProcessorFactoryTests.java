@@ -20,7 +20,6 @@
 package org.elasticsearch.ingest.geoip;
 
 import com.carrotsearch.randomizedtesting.generators.RandomPicks;
-import org.apache.lucene.util.Constants;
 import org.elasticsearch.ElasticsearchParseException;
 import org.elasticsearch.common.Randomness;
 import org.elasticsearch.index.VersionType;
@@ -55,16 +54,6 @@ public class GeoIpProcessorFactoryTests extends ESTestCase {
 
     @BeforeClass
     public static void loadDatabaseReaders() throws IOException {
-        // there are still problems on windows
-        assumeFalse("https://github.com/elastic/elasticsearch/issues/44552", Constants.WINDOWS);
-
-        // Skip setup because Windows cannot cleanup these files properly. The reason is that they are using
-        // a MappedByteBuffer which will keep the file mappings active until it is garbage-collected. As a consequence,
-        // the corresponding file appears to be still in use and Windows cannot delete it.
-        if (Constants.WINDOWS) {
-            return;
-        }
-
         final Path geoIpDir = createTempDir();
         final Path configDir = createTempDir();
         final Path geoIpConfigDir = configDir.resolve("ingest-geoip");
@@ -76,13 +65,6 @@ public class GeoIpProcessorFactoryTests extends ESTestCase {
 
     @AfterClass
     public static void closeDatabaseReaders() throws IOException {
-        // Skip setup because Windows cannot cleanup these files properly. The reason is that they are using
-        // a MappedByteBuffer which will keep the file mappings active until it is garbage-collected. As a consequence,
-        // the corresponding file appears to be still in use and Windows cannot delete it.
-        if (Constants.WINDOWS) {
-            return;
-        }
-
         for (DatabaseReaderLazyLoader reader : databaseReaders.values()) {
             reader.close();
         }
@@ -90,16 +72,13 @@ public class GeoIpProcessorFactoryTests extends ESTestCase {
     }
 
     public void testBuildDefaults() throws Exception {
-        // This test uses a MappedByteBuffer which will keep the file mappings active until it is garbage-collected.
-        // As a consequence, the corresponding file appears to be still in use and Windows cannot delete it.
-        assumeFalse("windows deletion behavior is asinine", Constants.WINDOWS);
         GeoIpProcessor.Factory factory = new GeoIpProcessor.Factory(databaseReaders, new GeoIpCache(1000));
 
         Map<String, Object> config = new HashMap<>();
         config.put("field", "_field");
         String processorTag = randomAlphaOfLength(10);
 
-        GeoIpProcessor processor = factory.create(null, processorTag, config);
+        GeoIpProcessor processor = factory.create(null, processorTag, null, config);
         assertThat(processor.getTag(), equalTo(processorTag));
         assertThat(processor.getField(), equalTo("_field"));
         assertThat(processor.getTargetField(), equalTo("geoip"));
@@ -109,9 +88,6 @@ public class GeoIpProcessorFactoryTests extends ESTestCase {
     }
 
     public void testSetIgnoreMissing() throws Exception {
-        // This test uses a MappedByteBuffer which will keep the file mappings active until it is garbage-collected.
-        // As a consequence, the corresponding file appears to be still in use and Windows cannot delete it.
-        assumeFalse("windows deletion behavior is asinine", Constants.WINDOWS);
         GeoIpProcessor.Factory factory = new GeoIpProcessor.Factory(databaseReaders, new GeoIpCache(1000));
 
         Map<String, Object> config = new HashMap<>();
@@ -119,7 +95,7 @@ public class GeoIpProcessorFactoryTests extends ESTestCase {
         config.put("ignore_missing", true);
         String processorTag = randomAlphaOfLength(10);
 
-        GeoIpProcessor processor = factory.create(null, processorTag, config);
+        GeoIpProcessor processor = factory.create(null, processorTag, null, config);
         assertThat(processor.getTag(), equalTo(processorTag));
         assertThat(processor.getField(), equalTo("_field"));
         assertThat(processor.getTargetField(), equalTo("geoip"));
@@ -129,9 +105,6 @@ public class GeoIpProcessorFactoryTests extends ESTestCase {
     }
 
     public void testCountryBuildDefaults() throws Exception {
-        // This test uses a MappedByteBuffer which will keep the file mappings active until it is garbage-collected.
-        // As a consequence, the corresponding file appears to be still in use and Windows cannot delete it.
-        assumeFalse("windows deletion behavior is asinine", Constants.WINDOWS);
         GeoIpProcessor.Factory factory = new GeoIpProcessor.Factory(databaseReaders, new GeoIpCache(1000));
 
         Map<String, Object> config = new HashMap<>();
@@ -139,7 +112,7 @@ public class GeoIpProcessorFactoryTests extends ESTestCase {
         config.put("database_file", "GeoLite2-Country.mmdb");
         String processorTag = randomAlphaOfLength(10);
 
-        GeoIpProcessor processor = factory.create(null, processorTag, config);
+        GeoIpProcessor processor = factory.create(null, processorTag, null, config);
 
         assertThat(processor.getTag(), equalTo(processorTag));
         assertThat(processor.getField(), equalTo("_field"));
@@ -150,9 +123,6 @@ public class GeoIpProcessorFactoryTests extends ESTestCase {
     }
 
     public void testAsnBuildDefaults() throws Exception {
-        // This test uses a MappedByteBuffer which will keep the file mappings active until it is garbage-collected.
-        // As a consequence, the corresponding file appears to be still in use and Windows cannot delete it.
-        assumeFalse("windows deletion behavior is asinine", Constants.WINDOWS);
         GeoIpProcessor.Factory factory = new GeoIpProcessor.Factory(databaseReaders, new GeoIpCache(1000));
 
         Map<String, Object> config = new HashMap<>();
@@ -160,7 +130,7 @@ public class GeoIpProcessorFactoryTests extends ESTestCase {
         config.put("database_file", "GeoLite2-ASN.mmdb");
         String processorTag = randomAlphaOfLength(10);
 
-        GeoIpProcessor processor = factory.create(null, processorTag, config);
+        GeoIpProcessor processor = factory.create(null, processorTag, null, config);
 
         assertThat(processor.getTag(), equalTo(processorTag));
         assertThat(processor.getField(), equalTo("_field"));
@@ -171,28 +141,22 @@ public class GeoIpProcessorFactoryTests extends ESTestCase {
     }
 
     public void testBuildTargetField() throws Exception {
-        // This test uses a MappedByteBuffer which will keep the file mappings active until it is garbage-collected.
-        // As a consequence, the corresponding file appears to be still in use and Windows cannot delete it.
-        assumeFalse("windows deletion behavior is asinine", Constants.WINDOWS);
         GeoIpProcessor.Factory factory = new GeoIpProcessor.Factory(databaseReaders, new GeoIpCache(1000));
         Map<String, Object> config = new HashMap<>();
         config.put("field", "_field");
         config.put("target_field", "_field");
-        GeoIpProcessor processor = factory.create(null, null, config);
+        GeoIpProcessor processor = factory.create(null, null, null, config);
         assertThat(processor.getField(), equalTo("_field"));
         assertThat(processor.getTargetField(), equalTo("_field"));
         assertFalse(processor.isIgnoreMissing());
     }
 
     public void testBuildDbFile() throws Exception {
-        // This test uses a MappedByteBuffer which will keep the file mappings active until it is garbage-collected.
-        // As a consequence, the corresponding file appears to be still in use and Windows cannot delete it.
-        assumeFalse("windows deletion behavior is asinine", Constants.WINDOWS);
         GeoIpProcessor.Factory factory = new GeoIpProcessor.Factory(databaseReaders, new GeoIpCache(1000));
         Map<String, Object> config = new HashMap<>();
         config.put("field", "_field");
         config.put("database_file", "GeoLite2-Country.mmdb");
-        GeoIpProcessor processor = factory.create(null, null, config);
+        GeoIpProcessor processor = factory.create(null, null, null, config);
         assertThat(processor.getField(), equalTo("_field"));
         assertThat(processor.getTargetField(), equalTo("geoip"));
         assertThat(processor.getDatabaseType(), equalTo("GeoLite2-Country"));
@@ -201,9 +165,6 @@ public class GeoIpProcessorFactoryTests extends ESTestCase {
     }
 
     public void testBuildWithCountryDbAndAsnFields() throws Exception {
-        // This test uses a MappedByteBuffer which will keep the file mappings active until it is garbage-collected.
-        // As a consequence, the corresponding file appears to be still in use and Windows cannot delete it.
-        assumeFalse("windows deletion behavior is asinine", Constants.WINDOWS);
         GeoIpProcessor.Factory factory = new GeoIpProcessor.Factory(databaseReaders, new GeoIpCache(1000));
         Map<String, Object> config = new HashMap<>();
         config.put("field", "_field");
@@ -212,15 +173,12 @@ public class GeoIpProcessorFactoryTests extends ESTestCase {
         asnOnlyProperties.remove(GeoIpProcessor.Property.IP);
         String asnProperty = RandomPicks.randomFrom(Randomness.get(), asnOnlyProperties).toString();
         config.put("properties", Collections.singletonList(asnProperty));
-        Exception e = expectThrows(ElasticsearchParseException.class, () -> factory.create(null, null, config));
+        Exception e = expectThrows(ElasticsearchParseException.class, () -> factory.create(null, null, null, config));
         assertThat(e.getMessage(), equalTo("[properties] illegal property value [" + asnProperty +
             "]. valid values are [IP, COUNTRY_ISO_CODE, COUNTRY_NAME, CONTINENT_NAME]"));
     }
 
     public void testBuildWithAsnDbAndCityFields() throws Exception {
-        // This test uses a MappedByteBuffer which will keep the file mappings active until it is garbage-collected.
-        // As a consequence, the corresponding file appears to be still in use and Windows cannot delete it.
-        assumeFalse("windows deletion behavior is asinine", Constants.WINDOWS);
         GeoIpProcessor.Factory factory = new GeoIpProcessor.Factory(databaseReaders, new GeoIpCache(1000));
         Map<String, Object> config = new HashMap<>();
         config.put("field", "_field");
@@ -229,28 +187,22 @@ public class GeoIpProcessorFactoryTests extends ESTestCase {
         cityOnlyProperties.remove(GeoIpProcessor.Property.IP);
         String cityProperty = RandomPicks.randomFrom(Randomness.get(), cityOnlyProperties).toString();
         config.put("properties", Collections.singletonList(cityProperty));
-        Exception e = expectThrows(ElasticsearchParseException.class, () -> factory.create(null, null, config));
+        Exception e = expectThrows(ElasticsearchParseException.class, () -> factory.create(null, null, null, config));
         assertThat(e.getMessage(), equalTo("[properties] illegal property value [" + cityProperty +
             "]. valid values are [IP, ASN, ORGANIZATION_NAME]"));
     }
 
     public void testBuildNonExistingDbFile() throws Exception {
-        // This test uses a MappedByteBuffer which will keep the file mappings active until it is garbage-collected.
-        // As a consequence, the corresponding file appears to be still in use and Windows cannot delete it.
-        assumeFalse("windows deletion behavior is asinine", Constants.WINDOWS);
         GeoIpProcessor.Factory factory = new GeoIpProcessor.Factory(databaseReaders, new GeoIpCache(1000));
 
         Map<String, Object> config = new HashMap<>();
         config.put("field", "_field");
         config.put("database_file", "does-not-exist.mmdb");
-        Exception e = expectThrows(ElasticsearchParseException.class, () -> factory.create(null, null, config));
+        Exception e = expectThrows(ElasticsearchParseException.class, () -> factory.create(null, null, null, config));
         assertThat(e.getMessage(), equalTo("[database_file] database file [does-not-exist.mmdb] doesn't exist"));
     }
 
     public void testBuildFields() throws Exception {
-        // This test uses a MappedByteBuffer which will keep the file mappings active until it is garbage-collected.
-        // As a consequence, the corresponding file appears to be still in use and Windows cannot delete it.
-        assumeFalse("windows deletion behavior is asinine", Constants.WINDOWS);
         GeoIpProcessor.Factory factory = new GeoIpProcessor.Factory(databaseReaders, new GeoIpCache(1000));
 
         Set<GeoIpProcessor.Property> properties = EnumSet.noneOf(GeoIpProcessor.Property.class);
@@ -268,36 +220,30 @@ public class GeoIpProcessorFactoryTests extends ESTestCase {
         Map<String, Object> config = new HashMap<>();
         config.put("field", "_field");
         config.put("properties", fieldNames);
-        GeoIpProcessor processor = factory.create(null, null, config);
+        GeoIpProcessor processor = factory.create(null, null, null, config);
         assertThat(processor.getField(), equalTo("_field"));
         assertThat(processor.getProperties(), equalTo(properties));
         assertFalse(processor.isIgnoreMissing());
     }
 
     public void testBuildIllegalFieldOption() throws Exception {
-        // This test uses a MappedByteBuffer which will keep the file mappings active until it is garbage-collected.
-        // As a consequence, the corresponding file appears to be still in use and Windows cannot delete it.
-        assumeFalse("windows deletion behavior is asinine", Constants.WINDOWS);
         GeoIpProcessor.Factory factory = new GeoIpProcessor.Factory(databaseReaders, new GeoIpCache(1000));
 
         Map<String, Object> config1 = new HashMap<>();
         config1.put("field", "_field");
         config1.put("properties", Collections.singletonList("invalid"));
-        Exception e = expectThrows(ElasticsearchParseException.class, () -> factory.create(null, null, config1));
+        Exception e = expectThrows(ElasticsearchParseException.class, () -> factory.create(null, null, null, config1));
         assertThat(e.getMessage(), equalTo("[properties] illegal property value [invalid]. valid values are [IP, COUNTRY_ISO_CODE, " +
             "COUNTRY_NAME, CONTINENT_NAME, REGION_ISO_CODE, REGION_NAME, CITY_NAME, TIMEZONE, LOCATION]"));
 
         Map<String, Object> config2 = new HashMap<>();
         config2.put("field", "_field");
         config2.put("properties", "invalid");
-        e = expectThrows(ElasticsearchParseException.class, () -> factory.create(null, null, config2));
+        e = expectThrows(ElasticsearchParseException.class, () -> factory.create(null, null, null, config2));
         assertThat(e.getMessage(), equalTo("[properties] property isn't a list, but of type [java.lang.String]"));
     }
 
     public void testLazyLoading() throws Exception {
-        // This test uses a MappedByteBuffer which will keep the file mappings active until it is garbage-collected.
-        // As a consequence, the corresponding file appears to be still in use and Windows cannot delete it.
-        assumeFalse("windows deletion behavior is asinine", Constants.WINDOWS);
         final Path geoIpDir = createTempDir();
         final Path configDir = createTempDir();
         final Path geoIpConfigDir = configDir.resolve("ingest-geoip");
@@ -314,12 +260,12 @@ public class GeoIpProcessorFactoryTests extends ESTestCase {
         }
 
         final Map<String, Object> field = Collections.singletonMap("_field", "1.1.1.1");
-        final IngestDocument document = new IngestDocument("index", "type", "id", "routing", 1L, VersionType.EXTERNAL, field);
+        final IngestDocument document = new IngestDocument("index", "id", "routing", 1L, VersionType.EXTERNAL, field);
 
         Map<String, Object> config = new HashMap<>();
         config.put("field", "_field");
         config.put("database_file", "GeoLite2-City.mmdb");
-        final GeoIpProcessor city = factory.create(null, "_tag", config);
+        final GeoIpProcessor city = factory.create(null, "_tag", null, config);
 
         // these are lazy loaded until first use so we expect null here
         assertNull(databaseReaders.get("GeoLite2-City.mmdb").databaseReader.get());
@@ -330,7 +276,7 @@ public class GeoIpProcessorFactoryTests extends ESTestCase {
         config = new HashMap<>();
         config.put("field", "_field");
         config.put("database_file", "GeoLite2-Country.mmdb");
-        final GeoIpProcessor country = factory.create(null, "_tag", config);
+        final GeoIpProcessor country = factory.create(null, "_tag", null, config);
 
         // these are lazy loaded until first use so we expect null here
         assertNull(databaseReaders.get("GeoLite2-Country.mmdb").databaseReader.get());
@@ -341,7 +287,7 @@ public class GeoIpProcessorFactoryTests extends ESTestCase {
         config = new HashMap<>();
         config.put("field", "_field");
         config.put("database_file", "GeoLite2-ASN.mmdb");
-        final GeoIpProcessor asn = factory.create(null, "_tag", config);
+        final GeoIpProcessor asn = factory.create(null, "_tag", null, config);
 
         // these are lazy loaded until first use so we expect null here
         assertNull(databaseReaders.get("GeoLite2-ASN.mmdb").databaseReader.get());
@@ -371,12 +317,12 @@ public class GeoIpProcessorFactoryTests extends ESTestCase {
         }
 
         final Map<String, Object> field = Collections.singletonMap("_field", "1.1.1.1");
-        final IngestDocument document = new IngestDocument("index", "type", "id", "routing", 1L, VersionType.EXTERNAL, field);
+        final IngestDocument document = new IngestDocument("index", "id", "routing", 1L, VersionType.EXTERNAL, field);
 
         Map<String, Object> config = new HashMap<>();
         config.put("field", "_field");
         config.put("database_file", "GeoIP2-City.mmdb");
-        final GeoIpProcessor city = factory.create(null, "_tag", config);
+        final GeoIpProcessor city = factory.create(null, "_tag", null, config);
 
         // these are lazy loaded until first use so we expect null here
         assertNull(databaseReaders.get("GeoIP2-City.mmdb").databaseReader.get());

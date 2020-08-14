@@ -28,15 +28,20 @@ import org.elasticsearch.common.xcontent.XContentFactory;
 import org.elasticsearch.common.xcontent.XContentType;
 import org.elasticsearch.index.IndexService;
 import org.elasticsearch.plugins.Plugin;
-import org.elasticsearch.test.ESSingleNodeTestCase;
 import org.hamcrest.Matchers;
 import org.junit.Before;
 
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Set;
 
-public class RankFeaturesFieldMapperTests extends ESSingleNodeTestCase {
+public class RankFeaturesFieldMapperTests extends FieldMapperTestCase<RankFeaturesFieldMapper.Builder> {
+
+    @Override
+    protected Set<String> unsupportedProperties() {
+        return Set.of("analyzer", "similarity", "store", "doc_values", "index");
+    }
 
     IndexService indexService;
     DocumentMapperParser parser;
@@ -61,7 +66,7 @@ public class RankFeaturesFieldMapperTests extends ESSingleNodeTestCase {
 
         assertEquals(mapping, mapper.mappingSource().toString());
 
-        ParsedDocument doc1 = mapper.parse(new SourceToParse("test", "type", "1", BytesReference
+        ParsedDocument doc1 = mapper.parse(new SourceToParse("test", "1", BytesReference
                 .bytes(XContentFactory.jsonBuilder()
                         .startObject()
                             .startObject("field")
@@ -95,7 +100,7 @@ public class RankFeaturesFieldMapperTests extends ESSingleNodeTestCase {
         assertEquals(mapping, mapper.mappingSource().toString());
 
         MapperParsingException e = expectThrows(MapperParsingException.class,
-                () -> mapper.parse(new SourceToParse("test", "type", "1", BytesReference
+                () -> mapper.parse(new SourceToParse("test", "1", BytesReference
                         .bytes(XContentFactory.jsonBuilder()
                                 .startObject()
                                 .startObject("field")
@@ -107,7 +112,7 @@ public class RankFeaturesFieldMapperTests extends ESSingleNodeTestCase {
                 "START_ARRAY", e.getCause().getMessage());
 
         e = expectThrows(MapperParsingException.class,
-                () -> mapper.parse(new SourceToParse("test", "type", "1", BytesReference
+                () -> mapper.parse(new SourceToParse("test", "1", BytesReference
                         .bytes(XContentFactory.jsonBuilder()
                                 .startObject()
                                     .startArray("foo")
@@ -126,5 +131,10 @@ public class RankFeaturesFieldMapperTests extends ESSingleNodeTestCase {
                         XContentType.JSON)));
         assertEquals("[rank_features] fields do not support indexing multiple values for the same rank feature [foo.field.bar] in " +
                 "the same document", e.getCause().getMessage());
+    }
+
+    @Override
+    protected RankFeaturesFieldMapper.Builder newBuilder() {
+        return new RankFeaturesFieldMapper.Builder("rf");
     }
 }

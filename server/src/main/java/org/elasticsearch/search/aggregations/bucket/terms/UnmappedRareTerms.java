@@ -25,7 +25,6 @@ import org.elasticsearch.common.xcontent.XContentBuilder;
 import org.elasticsearch.search.DocValueFormat;
 import org.elasticsearch.search.aggregations.InternalAggregation;
 import org.elasticsearch.search.aggregations.InternalAggregations;
-import org.elasticsearch.search.aggregations.pipeline.PipelineAggregator;
 
 import java.io.IOException;
 import java.util.Collections;
@@ -46,8 +45,8 @@ public class UnmappedRareTerms extends InternalRareTerms<UnmappedRareTerms, Unma
         }
     }
 
-    UnmappedRareTerms(String name, List<PipelineAggregator> pipelineAggregators, Map<String, Object> metaData) {
-        super(name, LongRareTermsAggregator.ORDER, 0, pipelineAggregators, metaData);
+    UnmappedRareTerms(String name, Map<String, Object> metadata) {
+        super(name, LongRareTermsAggregator.ORDER, 0, metadata);
     }
 
     /**
@@ -74,11 +73,16 @@ public class UnmappedRareTerms extends InternalRareTerms<UnmappedRareTerms, Unma
 
     @Override
     public UnmappedRareTerms create(List<UnmappedRareTerms.Bucket> buckets) {
-        return new UnmappedRareTerms(name, pipelineAggregators(), metaData);
+        return new UnmappedRareTerms(name, metadata);
     }
 
     @Override
     public UnmappedRareTerms.Bucket createBucket(InternalAggregations aggregations, UnmappedRareTerms.Bucket prototype) {
+        throw new UnsupportedOperationException("not supported for UnmappedRareTerms");
+    }
+
+    @Override
+    UnmappedRareTerms.Bucket createBucket(long docCount, InternalAggregations aggs, Bucket prototype) {
         throw new UnsupportedOperationException("not supported for UnmappedRareTerms");
     }
 
@@ -88,8 +92,8 @@ public class UnmappedRareTerms extends InternalRareTerms<UnmappedRareTerms, Unma
     }
 
     @Override
-    public InternalAggregation doReduce(List<InternalAggregation> aggregations, ReduceContext reduceContext) {
-        return new UnmappedRareTerms(name, pipelineAggregators(), metaData);
+    public InternalAggregation reduce(List<InternalAggregation> aggregations, ReduceContext reduceContext) {
+        return new UnmappedRareTerms(name, metadata);
     }
 
     @Override

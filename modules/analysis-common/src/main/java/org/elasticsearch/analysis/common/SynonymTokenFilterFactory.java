@@ -19,7 +19,6 @@
 
 package org.elasticsearch.analysis.common;
 
-import org.apache.logging.log4j.LogManager;
 import org.apache.lucene.analysis.Analyzer;
 import org.apache.lucene.analysis.TokenStream;
 import org.apache.lucene.analysis.synonym.SynonymFilter;
@@ -43,15 +42,14 @@ import java.util.function.Function;
 
 public class SynonymTokenFilterFactory extends AbstractTokenFilterFactory {
 
-    private static final DeprecationLogger DEPRECATION_LOGGER
-        = new DeprecationLogger(LogManager.getLogger(SynonymTokenFilterFactory.class));
+    private static final DeprecationLogger DEPRECATION_LOGGER = DeprecationLogger.getLogger(SynonymTokenFilterFactory.class);
 
     private final String format;
     private final boolean expand;
     private final boolean lenient;
     protected final Settings settings;
     protected final Environment environment;
-    private final boolean updateable;
+    protected final AnalysisMode analysisMode;
 
     SynonymTokenFilterFactory(IndexSettings indexSettings, Environment env,
                                       String name, Settings settings) {
@@ -59,21 +57,22 @@ public class SynonymTokenFilterFactory extends AbstractTokenFilterFactory {
         this.settings = settings;
 
         if (settings.get("ignore_case") != null) {
-            DEPRECATION_LOGGER.deprecated(
+            DEPRECATION_LOGGER.deprecate("synonym_ignore_case_option",
                 "The ignore_case option on the synonym_graph filter is deprecated. " +
-                    "Instead, insert a lowercase filter in the filter chain before the synonym_graph filter.");
+                        "Instead, insert a lowercase filter in the filter chain before the synonym_graph filter.");
         }
 
         this.expand = settings.getAsBoolean("expand", true);
         this.lenient = settings.getAsBoolean("lenient", false);
         this.format = settings.get("format", "");
-        this.updateable = settings.getAsBoolean("updateable", false);
+        boolean updateable = settings.getAsBoolean("updateable", false);
+        this.analysisMode = updateable ? AnalysisMode.SEARCH_TIME : AnalysisMode.ALL;
         this.environment = env;
     }
 
     @Override
     public AnalysisMode getAnalysisMode() {
-        return this.updateable ? AnalysisMode.SEARCH_TIME : AnalysisMode.ALL;
+        return this.analysisMode;
     }
 
     @Override
@@ -109,7 +108,7 @@ public class SynonymTokenFilterFactory extends AbstractTokenFilterFactory {
 
             @Override
             public AnalysisMode getAnalysisMode() {
-                return updateable ? AnalysisMode.SEARCH_TIME : AnalysisMode.ALL;
+                return analysisMode;
             }
         };
     }

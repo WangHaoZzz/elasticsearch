@@ -70,10 +70,10 @@ public class TransportGetAction extends TransportSingleShardAction<GetRequest, G
     @Override
     protected void resolveRequest(ClusterState state, InternalRequest request) {
         // update the routing (request#index here is possibly an alias)
-        request.request().routing(state.metaData().resolveIndexRouting(request.request().routing(), request.request().index()));
+        request.request().routing(state.metadata().resolveIndexRouting(request.request().routing(), request.request().index()));
         // Fail fast on the node that received the request.
-        if (request.request().routing() == null && state.getMetaData().routingRequired(request.concreteIndex())) {
-            throw new RoutingMissingException(request.concreteIndex(), request.request().type(), request.request().id());
+        if (request.request().routing() == null && state.getMetadata().routingRequired(request.concreteIndex())) {
+            throw new RoutingMissingException(request.concreteIndex(), request.request().id());
         }
     }
 
@@ -103,7 +103,7 @@ public class TransportGetAction extends TransportSingleShardAction<GetRequest, G
             indexShard.refresh("refresh_flag_get");
         }
 
-        GetResult result = indexShard.getService().get(request.type(), request.id(), request.storedFields(),
+        GetResult result = indexShard.getService().get(request.id(), request.storedFields(),
                 request.realtime(), request.version(), request.versionType(), request.fetchSourceContext());
         return new GetResponse(result);
     }
@@ -115,8 +115,13 @@ public class TransportGetAction extends TransportSingleShardAction<GetRequest, G
 
     @Override
     protected String getExecutor(GetRequest request, ShardId shardId) {
-        IndexService indexService = indicesService.indexServiceSafe(shardId.getIndex());
-        return indexService.getIndexSettings().isSearchThrottled() ? ThreadPool.Names.SEARCH_THROTTLED : super.getExecutor(request,
-            shardId);
+        final ClusterState clusterState = clusterService.state();
+        if (clusterState.metadata().index(shardId.getIndex()).isSystem()) {
+            return ThreadPool.Names.SYSTEM_READ;
+        } else if (indicesService.indexServiceSafe(shardId.getIndex()).getIndexSettings().isSearchThrottled()) {
+            return ThreadPool.Names.SEARCH_THROTTLED;
+        } else {
+            return super.getExecutor(request, shardId);
+        }
     }
 }

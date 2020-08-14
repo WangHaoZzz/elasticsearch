@@ -4,7 +4,7 @@
 <titleabbrev>Distance feature</titleabbrev>
 ++++
 
-Boosts the <<query-filter-context, relevance score>> of documents closer to a
+Boosts the <<relevance-scores,relevance score>> of documents closer to a
 provided `origin` date or point. For example, you can use this query to give
 more weight to documents closer to a certain date or location.
 
@@ -33,7 +33,7 @@ following example.
 * `production_date`, a <<date, `date`>> field
 * `location`, a <<geo-point,`geo_point`>> field
 
-[source,js]
+[source,console]
 ----
 PUT /items
 {
@@ -52,14 +52,13 @@ PUT /items
   }
 }
 ----
-// CONSOLE
 // TESTSETUP
 --
 
 . Index several documents to this index.
 +
 --
-[source,js]
+[source,console]
 ----
 PUT /items/_doc/1?refresh
 {
@@ -83,7 +82,6 @@ PUT /items/_doc/3?refresh
   "location": [-71.3, 41.12]
 }
 ----
-// CONSOLE
 --
 
 
@@ -96,7 +94,7 @@ The following `bool` search returns documents with a `name` value of
 `chocolate`. The search also uses the `distance_feature` query to increase the
 relevance score of documents with a `production_date` value closer to `now`.
 
-[source,js]
+[source,console]
 ----
 GET /items/_search
 {
@@ -118,7 +116,6 @@ GET /items/_search
   }
 }
 ----
-// CONSOLE
 
 [[distance-feature-query-distance-ex]]
 ====== Boost documents based on location
@@ -126,7 +123,7 @@ The following `bool` search returns documents with a `name` value of
 `chocolate`. The search also uses the `distance_feature` query to increase the
 relevance score of documents with a `location` value closer to `[-71.3, 41.15]`.
 
-[source,js]
+[source,console]
 ----
 GET /items/_search
 {
@@ -148,7 +145,6 @@ GET /items/_search
   }
 }
 ----
-// CONSOLE
 
 
 [[distance-feature-top-level-params]]
@@ -196,7 +192,7 @@ must be a <<distance-units,distance unit>>, such as `1km` or `12m`.
 +
 --
 (Optional, float) Floating point number used to multiply the
-<<query-filter-context, relevance score>> of matching documents. This value
+<<relevance-scores,relevance score>> of matching documents. This value
 cannot be negative. Defaults to `1.0`.
 --
 
@@ -208,11 +204,11 @@ cannot be negative. Defaults to `1.0`.
 ===== How the `distance_feature` query calculates relevance scores
 The `distance_feature` query dynamically calculates the distance between the
 `origin` value and a document's field values. It then uses this distance as a
-feature to boost the <<query-filter-context, relevance score>> of closer
+feature to boost the <<relevance-scores,relevance score>> of closer
 documents.
 
-The `distance_feature` query calculates a document's <<query-filter-context,
-relevance score>> as follows:
+The `distance_feature` query calculates a document's
+<<relevance-scores,relevance score>> as follows:
 
 ```
 relevance score = boost * pivot / (pivot + distance)
@@ -224,6 +220,6 @@ document's field value.
 [[distance-feature-skip-hits]]
 ===== Skip non-competitive hits
 Unlike the <<query-dsl-function-score-query,`function_score`>> query or other
-ways to change <<query-filter-context, relevance scores>>, the
+ways to change <<relevance-scores,relevance scores>>, the
 `distance_feature` query efficiently skips non-competitive hits when the
 <<search-uri-request,`track_total_hits`>> parameter is **not** `true`.

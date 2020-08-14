@@ -8,21 +8,22 @@ package org.elasticsearch.xpack.ilm.action;
 
 import org.elasticsearch.client.node.NodeClient;
 import org.elasticsearch.common.Strings;
-import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.rest.BaseRestHandler;
-import org.elasticsearch.rest.RestController;
 import org.elasticsearch.rest.RestRequest;
 import org.elasticsearch.rest.action.RestToXContentListener;
 import org.elasticsearch.xpack.core.ilm.action.GetLifecycleAction;
 
-import java.io.IOException;
+import java.util.List;
+
+import static org.elasticsearch.rest.RestRequest.Method.GET;
 
 public class RestGetLifecycleAction extends BaseRestHandler {
 
-    public RestGetLifecycleAction(Settings settings, RestController controller) {
-        super(settings);
-        controller.registerHandler(RestRequest.Method.GET, "/_ilm/policy", this);
-        controller.registerHandler(RestRequest.Method.GET, "/_ilm/policy/{name}", this);
+    @Override
+    public List<Route> routes() {
+        return List.of(
+            new Route(GET, "/_ilm/policy"),
+            new Route(GET, "/_ilm/policy/{name}"));
     }
 
     @Override
@@ -31,7 +32,7 @@ public class RestGetLifecycleAction extends BaseRestHandler {
     }
 
     @Override
-    protected RestChannelConsumer prepareRequest(RestRequest restRequest, NodeClient client) throws IOException {
+    protected RestChannelConsumer prepareRequest(RestRequest restRequest, NodeClient client) {
         String[] lifecycleNames = Strings.splitStringByCommaToArray(restRequest.param("name"));
         GetLifecycleAction.Request getLifecycleRequest = new GetLifecycleAction.Request(lifecycleNames);
         getLifecycleRequest.timeout(restRequest.paramAsTime("timeout", getLifecycleRequest.timeout()));

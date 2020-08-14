@@ -69,11 +69,8 @@ public class TopHitsAggregatorTests extends AggregatorTestCase {
         SearchHits searchHits = ((TopHits) result).getHits();
         assertEquals(3L, searchHits.getTotalHits().value);
         assertEquals("3", searchHits.getAt(0).getId());
-        assertEquals("type", searchHits.getAt(0).getType());
         assertEquals("2", searchHits.getAt(1).getId());
-        assertEquals("type", searchHits.getAt(1).getType());
         assertEquals("1", searchHits.getAt(2).getId());
-        assertEquals("type", searchHits.getAt(2).getType());
         assertTrue(AggregationInspectionHelper.hasValue(((InternalTopHits)result)));
     }
 
@@ -130,11 +127,7 @@ public class TopHitsAggregatorTests extends AggregatorTestCase {
         assertTrue(AggregationInspectionHelper.hasValue(((InternalTopHits) terms.getBucketByKey("d").getAggregations().get("top"))));
     }
 
-    private static final MappedFieldType STRING_FIELD_TYPE = new KeywordFieldMapper.KeywordFieldType();
-    static {
-        STRING_FIELD_TYPE.setName("string");
-        STRING_FIELD_TYPE.setHasDocValues(true);
-    }
+    private static final MappedFieldType STRING_FIELD_TYPE = new KeywordFieldMapper.KeywordFieldType("string");
 
     private Aggregation testCase(Query query, AggregationBuilder builder) throws IOException {
         Directory directory = newDirectory();
@@ -158,7 +151,7 @@ public class TopHitsAggregatorTests extends AggregatorTestCase {
         Document document = new Document();
         document.add(new Field(IdFieldMapper.NAME, Uid.encodeId(id), IdFieldMapper.Defaults.FIELD_TYPE));
         for (String stringValue : stringValues) {
-            document.add(new Field("string", stringValue, STRING_FIELD_TYPE));
+            document.add(new Field("string", stringValue, KeywordFieldMapper.Defaults.FIELD_TYPE));
             document.add(new SortedSetDocValuesField("string", new BytesRef(stringValue)));
         }
         return document;

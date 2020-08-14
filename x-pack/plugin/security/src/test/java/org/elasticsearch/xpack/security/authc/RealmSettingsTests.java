@@ -184,7 +184,7 @@ public class RealmSettingsTests extends ESTestCase {
                 .put("unmapped_groups_as_roles", randomBoolean())
                 .put("files.role_mapping", "x-pack/" + randomAlphaOfLength(8) + ".yml")
                 .put("timeout.tcp_connect", randomPositiveTimeValue())
-                .put("timeout.tcp_read", randomPositiveTimeValue())
+                .put("timeout.response", randomPositiveTimeValue())
                 .put("timeout.ldap_search", randomPositiveTimeValue());
         if (configureSSL) {
             configureSsl("ssl.", builder, randomBoolean(), randomBoolean());
@@ -209,6 +209,9 @@ public class RealmSettingsTests extends ESTestCase {
             builder.put("truststore.algorithm", randomAlphaOfLengthBetween(6, 10));
         } else {
             builder.putList("certificate_authorities", generateRandomStringArray(5, 32, false, false));
+        }
+        if (randomBoolean()) {
+            builder.put("delegation.enabled", randomBoolean());
         }
         return builder;
     }

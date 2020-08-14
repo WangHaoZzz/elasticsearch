@@ -22,7 +22,7 @@ package org.elasticsearch.search.internal;
 import org.apache.lucene.search.Collector;
 import org.apache.lucene.search.FieldDoc;
 import org.apache.lucene.search.Query;
-import org.elasticsearch.action.search.SearchTask;
+import org.elasticsearch.action.search.SearchShardTask;
 import org.elasticsearch.action.search.SearchType;
 import org.elasticsearch.common.unit.TimeValue;
 import org.elasticsearch.common.util.BigArrays;
@@ -46,8 +46,7 @@ import org.elasticsearch.search.fetch.StoredFieldsContext;
 import org.elasticsearch.search.fetch.subphase.FetchSourceContext;
 import org.elasticsearch.search.fetch.subphase.InnerHitsContext;
 import org.elasticsearch.search.fetch.subphase.ScriptFieldsContext;
-import org.elasticsearch.search.fetch.subphase.highlight.SearchContextHighlight;
-import org.elasticsearch.search.lookup.SearchLookup;
+import org.elasticsearch.search.fetch.subphase.highlight.SearchHighlightContext;
 import org.elasticsearch.search.profile.Profilers;
 import org.elasticsearch.search.query.QuerySearchResult;
 import org.elasticsearch.search.rescore.RescoreContext;
@@ -106,7 +105,7 @@ public abstract class FilteredSearchContext extends SearchContext {
     }
 
     @Override
-    public long id() {
+    public SearchContextId id() {
         return in.id();
     }
 
@@ -166,12 +165,12 @@ public abstract class FilteredSearchContext extends SearchContext {
     }
 
     @Override
-    public SearchContextHighlight highlight() {
+    public SearchHighlightContext highlight() {
         return in.highlight();
     }
 
     @Override
-    public void highlight(SearchContextHighlight highlight) {
+    public void highlight(SearchHighlightContext highlight) {
         in.highlight(highlight);
     }
 
@@ -472,11 +471,6 @@ public abstract class FilteredSearchContext extends SearchContext {
     }
 
     @Override
-    public SearchLookup lookup() {
-        return in.lookup();
-    }
-
-    @Override
     public DfsSearchResult dfsResult() {
         return in.dfsResult();
     }
@@ -497,8 +491,8 @@ public abstract class FilteredSearchContext extends SearchContext {
     }
 
     @Override
-    public MappedFieldType smartNameFieldType(String name) {
-        return in.smartNameFieldType(name);
+    public MappedFieldType fieldType(String name) {
+        return in.fieldType(name);
     }
 
     @Override
@@ -535,12 +529,12 @@ public abstract class FilteredSearchContext extends SearchContext {
     }
 
     @Override
-    public void setTask(SearchTask task) {
+    public void setTask(SearchShardTask task) {
         in.setTask(task);
     }
 
     @Override
-    public SearchTask getTask() {
+    public SearchShardTask getTask() {
         return in.getTask();
     }
 

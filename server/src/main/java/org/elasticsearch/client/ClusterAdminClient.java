@@ -49,6 +49,9 @@ import org.elasticsearch.action.admin.cluster.node.tasks.list.ListTasksResponse;
 import org.elasticsearch.action.admin.cluster.node.usage.NodesUsageRequest;
 import org.elasticsearch.action.admin.cluster.node.usage.NodesUsageRequestBuilder;
 import org.elasticsearch.action.admin.cluster.node.usage.NodesUsageResponse;
+import org.elasticsearch.action.admin.cluster.repositories.cleanup.CleanupRepositoryRequest;
+import org.elasticsearch.action.admin.cluster.repositories.cleanup.CleanupRepositoryRequestBuilder;
+import org.elasticsearch.action.admin.cluster.repositories.cleanup.CleanupRepositoryResponse;
 import org.elasticsearch.action.admin.cluster.repositories.delete.DeleteRepositoryRequest;
 import org.elasticsearch.action.admin.cluster.repositories.delete.DeleteRepositoryRequestBuilder;
 import org.elasticsearch.action.admin.cluster.repositories.get.GetRepositoriesRequest;
@@ -98,6 +101,10 @@ import org.elasticsearch.action.admin.cluster.storedscripts.PutStoredScriptReque
 import org.elasticsearch.action.admin.cluster.tasks.PendingClusterTasksRequest;
 import org.elasticsearch.action.admin.cluster.tasks.PendingClusterTasksRequestBuilder;
 import org.elasticsearch.action.admin.cluster.tasks.PendingClusterTasksResponse;
+import org.elasticsearch.action.admin.indices.dangling.delete.DeleteDanglingIndexRequest;
+import org.elasticsearch.action.admin.indices.dangling.import_index.ImportDanglingIndexRequest;
+import org.elasticsearch.action.admin.indices.dangling.list.ListDanglingIndicesRequest;
+import org.elasticsearch.action.admin.indices.dangling.list.ListDanglingIndicesResponse;
 import org.elasticsearch.action.ingest.DeletePipelineRequest;
 import org.elasticsearch.action.ingest.DeletePipelineRequestBuilder;
 import org.elasticsearch.action.ingest.GetPipelineRequest;
@@ -454,6 +461,21 @@ public interface ClusterAdminClient extends ElasticsearchClient {
     GetRepositoriesRequestBuilder prepareGetRepositories(String... name);
 
     /**
+     * Cleans up repository.
+     */
+    CleanupRepositoryRequestBuilder prepareCleanupRepository(String repository);
+
+    /**
+     * Cleans up repository.
+     */
+    ActionFuture<CleanupRepositoryResponse> cleanupRepository(CleanupRepositoryRequest repository);
+
+    /**
+     * Cleans up repository.
+     */
+    void cleanupRepository(CleanupRepositoryRequest repository, ActionListener<CleanupRepositoryResponse> listener);
+
+    /**
      * Verifies a repository.
      */
     ActionFuture<VerifyRepositoryResponse> verifyRepository(VerifyRepositoryRequest request);
@@ -511,7 +533,7 @@ public interface ClusterAdminClient extends ElasticsearchClient {
     /**
      * Delete snapshot.
      */
-    DeleteSnapshotRequestBuilder prepareDeleteSnapshot(String repository, String snapshot);
+    DeleteSnapshotRequestBuilder prepareDeleteSnapshot(String repository, String... snapshot);
 
     /**
      * Restores a snapshot.
@@ -700,4 +722,34 @@ public interface ClusterAdminClient extends ElasticsearchClient {
      * Get a script from the cluster state
      */
     ActionFuture<GetStoredScriptResponse> getStoredScript(GetStoredScriptRequest request);
+
+    /**
+     * List dangling indices on all nodes.
+     */
+    void listDanglingIndices(ListDanglingIndicesRequest request, ActionListener<ListDanglingIndicesResponse> listener);
+
+    /**
+     * List dangling indices on all nodes.
+     */
+    ActionFuture<ListDanglingIndicesResponse> listDanglingIndices(ListDanglingIndicesRequest request);
+
+    /**
+     * Restore specified dangling indices.
+     */
+    void importDanglingIndex(ImportDanglingIndexRequest request, ActionListener<AcknowledgedResponse> listener);
+
+    /**
+     * Restore specified dangling indices.
+     */
+    ActionFuture<AcknowledgedResponse> importDanglingIndex(ImportDanglingIndexRequest request);
+
+    /**
+     * Delete specified dangling indices.
+     */
+    void deleteDanglingIndex(DeleteDanglingIndexRequest request, ActionListener<AcknowledgedResponse> listener);
+
+    /**
+     * Delete specified dangling indices.
+     */
+    ActionFuture<AcknowledgedResponse> deleteDanglingIndex(DeleteDanglingIndexRequest request);
 }

@@ -439,6 +439,10 @@ public class UsersTool extends LoggingAwareMultiCommand {
 
     private static char[] getPasswordHash(Terminal terminal, Environment env, String cliPasswordValue) throws UserException {
         final Hasher hasher = Hasher.resolve(XPackSettings.PASSWORD_HASHING_ALGORITHM.get(env.settings()));
+        if (XPackSettings.FIPS_MODE_ENABLED.get(env.settings()) && hasher.name().toLowerCase(Locale.ROOT).startsWith("pbkdf2") == false) {
+            throw new UserException(ExitCodes.CONFIG, "Only PBKDF2 is allowed for password hashing in a FIPS 140 JVM. Please set the " +
+                "appropriate value for [ " + XPackSettings.PASSWORD_HASHING_ALGORITHM.getKey() + " ] setting.");
+        }
         final char[] passwordHash;
         try (SecureString password = parsePassword(terminal, cliPasswordValue)) {
             passwordHash = hasher.hash(password);
@@ -475,11 +479,11 @@ public class UsersTool extends LoggingAwareMultiCommand {
         Set<String> knownRoles = Sets.union(FileRolesStore.parseFileForRoleNames(rolesFile, null), ReservedRolesStore.names());
         Set<String> unknownRoles = Sets.difference(Sets.newHashSet(roles), knownRoles);
         if (!unknownRoles.isEmpty()) {
-            terminal.println(String.format(Locale.ROOT, "Warning: The following roles [%s] are not in the [%s] file. Make sure the names " +
-                    "are correct. If the names are correct and the roles were created using the API please disregard this message. " +
-                    "Nonetheless the user will still be associated with all specified roles",
+            terminal.errorPrintln(String.format(Locale.ROOT, "Warning: The following roles [%s] are not in the [%s] file. " +
+                    "Make sure the names are correct. If the names are correct and the roles were created using the API please " +
+                    "disregard this message. Nonetheless the user will still be associated with all specified roles",
                 Strings.collectionToCommaDelimitedString(unknownRoles), rolesFile.toAbsolutePath()));
-            terminal.println("Known roles: " + knownRoles.toString());
+            terminal.errorPrintln("Known roles: " + knownRoles.toString());
         }
     }
 

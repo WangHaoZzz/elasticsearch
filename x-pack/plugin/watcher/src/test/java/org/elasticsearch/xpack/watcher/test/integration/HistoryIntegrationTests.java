@@ -7,7 +7,6 @@ package org.elasticsearch.xpack.watcher.test.integration;
 
 import org.elasticsearch.action.admin.indices.mapping.get.GetMappingsResponse;
 import org.elasticsearch.action.search.SearchResponse;
-import org.elasticsearch.common.bytes.BytesArray;
 import org.elasticsearch.common.xcontent.XContentBuilder;
 import org.elasticsearch.common.xcontent.XContentType;
 import org.elasticsearch.protocol.xpack.watcher.PutWatchResponse;
@@ -51,7 +50,7 @@ public class HistoryIntegrationTests extends AbstractWatcherIntegrationTestCase 
     public void testThatHistoryIsWrittenWithChainedInput() throws Exception {
         XContentBuilder xContentBuilder = jsonBuilder().startObject().startObject("inner").field("date", "2015-06-06").endObject()
                 .endObject();
-        index("foo", "bar", "1", xContentBuilder);
+        index("foo", "1", xContentBuilder);
         refresh();
 
         WatchSourceBuilder builder = watchBuilder()
@@ -102,10 +101,9 @@ public class HistoryIntegrationTests extends AbstractWatcherIntegrationTestCase 
         assertHitCount(searchResponse, 1);
 
         // as fields with dots are allowed in 5.0 again, the mapping must be checked in addition
-        GetMappingsResponse response = client().admin().indices().prepareGetMappings(".watcher-history*")
-            .addTypes(SINGLE_MAPPING_NAME).get();
-        byte[] bytes = response.getMappings().values().iterator().next().value.get(SINGLE_MAPPING_NAME).source().uncompressed();
-        XContentSource source = new XContentSource(new BytesArray(bytes), XContentType.JSON);
+        GetMappingsResponse response = client().admin().indices().prepareGetMappings(".watcher-history*").get();
+        XContentSource source = new XContentSource(
+                response.getMappings().values().iterator().next().value.source().uncompressed(), XContentType.JSON);
         // lets make sure the body fields are disabled
         if (useChained) {
             String chainedPath = SINGLE_MAPPING_NAME +
@@ -143,10 +141,9 @@ public class HistoryIntegrationTests extends AbstractWatcherIntegrationTestCase 
         assertHitCount(searchResponse, 1);
 
         // as fields with dots are allowed in 5.0 again, the mapping must be checked in addition
-        GetMappingsResponse response = client().admin().indices().prepareGetMappings(".watcher-history*")
-            .addTypes(SINGLE_MAPPING_NAME).get();
-        byte[] bytes = response.getMappings().values().iterator().next().value.get(SINGLE_MAPPING_NAME).source().uncompressed();
-        XContentSource source = new XContentSource(new BytesArray(bytes), XContentType.JSON);
+        GetMappingsResponse response = client().admin().indices().prepareGetMappings(".watcher-history*").get();
+        XContentSource source = new XContentSource(
+                response.getMappings().values().iterator().next().value.source().uncompressed(), XContentType.JSON);
 
         // lets make sure the body fields are disabled
         if (useChained) {
@@ -201,10 +198,9 @@ public class HistoryIntegrationTests extends AbstractWatcherIntegrationTestCase 
         assertThat(lastExecutionSuccesful, is(actionStatus.lastExecution().successful()));
 
         // also ensure that the status field is disabled in the watch history
-        GetMappingsResponse response = client().admin().indices().prepareGetMappings(".watcher-history*")
-            .addTypes(SINGLE_MAPPING_NAME).get();
-        byte[] bytes = response.getMappings().values().iterator().next().value.get(SINGLE_MAPPING_NAME).source().uncompressed();
-        XContentSource mappingSource = new XContentSource(new BytesArray(bytes), XContentType.JSON);
+        GetMappingsResponse response = client().admin().indices().prepareGetMappings(".watcher-history*").get();
+        XContentSource mappingSource =
+                new XContentSource(response.getMappings().values().iterator().next().value.source().uncompressed(), XContentType.JSON);
         assertThat(mappingSource.getValue(SINGLE_MAPPING_NAME + ".properties.status.enabled"), is(false));
         assertThat(mappingSource.getValue(SINGLE_MAPPING_NAME + ".properties.status.properties.status"), is(nullValue()));
         assertThat(mappingSource.getValue(SINGLE_MAPPING_NAME + ".properties.status.properties.status.properties.active"), is(nullValue()));

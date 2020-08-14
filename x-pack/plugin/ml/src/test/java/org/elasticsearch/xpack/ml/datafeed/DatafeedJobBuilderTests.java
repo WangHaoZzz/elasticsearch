@@ -11,19 +11,22 @@ import org.elasticsearch.client.Client;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.util.concurrent.ThreadContext;
 import org.elasticsearch.mock.orig.Mockito;
+import org.elasticsearch.tasks.TaskId;
 import org.elasticsearch.test.ESTestCase;
 import org.elasticsearch.threadpool.ThreadPool;
 import org.elasticsearch.xpack.core.action.util.QueryPage;
 import org.elasticsearch.xpack.core.ml.datafeed.DatafeedConfig;
 import org.elasticsearch.xpack.core.ml.job.config.DataDescription;
 import org.elasticsearch.xpack.core.ml.job.config.Job;
+import org.elasticsearch.xpack.core.ml.job.messages.Messages;
 import org.elasticsearch.xpack.core.ml.job.process.autodetect.state.DataCounts;
 import org.elasticsearch.xpack.core.ml.job.results.Bucket;
+import org.elasticsearch.xpack.ml.annotations.AnnotationPersister;
 import org.elasticsearch.xpack.ml.datafeed.persistence.DatafeedConfigProvider;
 import org.elasticsearch.xpack.ml.job.persistence.JobConfigProvider;
 import org.elasticsearch.xpack.ml.job.persistence.JobResultsPersister;
 import org.elasticsearch.xpack.ml.job.persistence.JobResultsProvider;
-import org.elasticsearch.xpack.ml.notifications.Auditor;
+import org.elasticsearch.xpack.ml.notifications.AnomalyDetectionAuditor;
 import org.junit.Before;
 
 import java.util.Collections;
@@ -31,6 +34,7 @@ import java.util.Date;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 
+import static org.elasticsearch.test.NodeRoles.nonRemoteClusterClientNode;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.nullValue;
@@ -44,7 +48,8 @@ import static org.mockito.Mockito.when;
 public class DatafeedJobBuilderTests extends ESTestCase {
 
     private Client client;
-    private Auditor auditor;
+    private AnomalyDetectionAuditor auditor;
+    private AnnotationPersister annotationPersister;
     private Consumer<Exception> taskHandler;
     private JobResultsProvider jobResultsProvider;
     private JobConfigProvider jobConfigProvider;
@@ -61,7 +66,8 @@ public class DatafeedJobBuilderTests extends ESTestCase {
         when(client.threadPool()).thenReturn(threadPool);
         when(threadPool.getThreadContext()).thenReturn(new ThreadContext(Settings.EMPTY));
         when(client.settings()).thenReturn(Settings.EMPTY);
-        auditor = mock(Auditor.class);
+        auditor = mock(AnomalyDetectionAuditor.class);
+        annotationPersister = mock(AnnotationPersister.class);
         taskHandler = mock(Consumer.class);
         jobResultsPersister = mock(JobResultsPersister.class);
 
@@ -88,11 +94,14 @@ public class DatafeedJobBuilderTests extends ESTestCase {
                 client,
                 xContentRegistry(),
                 auditor,
+                annotationPersister,
                 System::currentTimeMillis,
                 jobConfigProvider,
                 jobResultsProvider,
                 datafeedConfigProvider,
-                jobResultsPersister);
+                jobResultsPersister,
+                Settings.EMPTY,
+                "test_node");
     }
 
     public void testBuild_GivenScrollDatafeedAndNewJob() throws Exception {
@@ -116,7 +125,7 @@ public class DatafeedJobBuilderTests extends ESTestCase {
         givenJob(jobBuilder);
         givenDatafeed(datafeed);
 
-        datafeedJobBuilder.build("datafeed1", datafeedJobHandler);
+        datafeedJobBuilder.build("datafeed1", new TaskId(""), datafeedJobHandler);
 
         assertBusy(() -> wasHandlerCalled.get());
     }
@@ -144,7 +153,7 @@ public class DatafeedJobBuilderTests extends ESTestCase {
         givenJob(jobBuilder);
         givenDatafeed(datafeed);
 
-        datafeedJobBuilder.build("datafeed1", datafeedJobHandler);
+        datafeedJobBuilder.build("datafeed1", new TaskId(""), datafeedJobHandler);
 
         assertBusy(() -> wasHandlerCalled.get());
     }
@@ -172,7 +181,7 @@ public class DatafeedJobBuilderTests extends ESTestCase {
         givenJob(jobBuilder);
         givenDatafeed(datafeed);
 
-        datafeedJobBuilder.build("datafeed1", datafeedJobHandler);
+        datafeedJobBuilder.build("datafeed1", new TaskId(""), datafeedJobHandler);
 
         assertBusy(() -> wasHandlerCalled.get());
     }
@@ -197,9 +206,49 @@ public class DatafeedJobBuilderTests extends ESTestCase {
         givenJob(jobBuilder);
         givenDatafeed(datafeed);
 
-        datafeedJobBuilder.build("datafeed1", ActionListener.wrap(datafeedJob -> fail(), taskHandler));
+        datafeedJobBuilder.build("datafeed1", new TaskId(""), ActionListener.wrap(datafeedJob -> fail(), taskHandler));
 
         verify(taskHandler).accept(error);
+    }
+
+    public void testBuildGivenRemoteIndicesButNoRemoteSearching() throws Exception {
+        datafeedJobBuilder =
+            new DatafeedJobBuilder(
+                client,
+                xContentRegistry(),
+                auditor,
+                annotationPersister,
+                System::currentTimeMillis,
+                jobConfigProvider,
+                jobResultsProvider,
+                datafeedConfigProvider,
+                jobResultsPersister,
+                nonRemoteClusterClientNode(),
+                "test_node");
+        DataDescription.Builder dataDescription = new DataDescription.Builder();
+        dataDescription.setTimeField("time");
+        Job.Builder jobBuilder = DatafeedManagerTests.createDatafeedJob();
+        jobBuilder.setDataDescription(dataDescription);
+        jobBuilder.setCreateTime(new Date());
+        DatafeedConfig.Builder datafeed = DatafeedManagerTests.createDatafeedConfig("datafeed1", jobBuilder.getId());
+        datafeed.setIndices(Collections.singletonList("remotecluster:index-*"));
+
+        AtomicBoolean wasHandlerCalled = new AtomicBoolean(false);
+        ActionListener<DatafeedJob> datafeedJobHandler = ActionListener.wrap(
+            datafeedJob -> fail("datafeed builder did not fail when remote index was given and remote clusters were not enabled"),
+            e -> {
+                assertThat(e.getMessage(), equalTo(Messages.getMessage(Messages.DATAFEED_NEEDS_REMOTE_CLUSTER_SEARCH,
+                    "datafeed1",
+                    "[remotecluster:index-*]",
+                    "test_node")));
+                wasHandlerCalled.compareAndSet(false, true);
+            }
+        );
+
+        givenJob(jobBuilder);
+        givenDatafeed(datafeed);
+        datafeedJobBuilder.build("datafeed1", new TaskId(""), datafeedJobHandler);
+        assertBusy(() -> wasHandlerCalled.get());
     }
 
     private void givenJob(Job.Builder job) {

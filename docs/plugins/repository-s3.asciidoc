@@ -5,7 +5,7 @@ The S3 repository plugin adds support for using AWS S3 as a repository for
 {ref}/modules-snapshots.html[Snapshot/Restore].
 
 *If you are looking for a hosted solution of Elasticsearch on AWS, please visit
-http://www.elastic.co/cloud.*
+https://www.elastic.co/cloud/.*
 
 :plugin_name: repository-s3
 include::install_remove.asciidoc[]
@@ -17,11 +17,11 @@ The plugin provides a repository type named `s3` which may be used when creating
 a repository. The repository defaults to using
 https://docs.aws.amazon.com/AmazonECS/latest/developerguide/task-iam-roles.html[ECS
 IAM Role] or
-http://docs.aws.amazon.com/AWSEC2/latest/UserGuide/iam-roles-for-amazon-ec2.html[EC2
+https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/iam-roles-for-amazon-ec2.html[EC2
 IAM Role] credentials for authentication. The only mandatory setting is the
 bucket name:
 
-[source,js]
+[source,console]
 ----
 PUT _snapshot/my_s3_repository
 {
@@ -31,7 +31,6 @@ PUT _snapshot/my_s3_repository
   }
 }
 ----
-// CONSOLE
 // TEST[skip:we don't have s3 setup while testing this]
 
 
@@ -43,7 +42,7 @@ The settings have the form `s3.client.CLIENT_NAME.SETTING_NAME`. By default,
 `s3` repositories use a client named `default`, but this can be modified using
 the <<repository-s3-repository,repository setting>> `client`. For example:
 
-[source,js]
+[source,console]
 ----
 PUT _snapshot/my_s3_repository
 {
@@ -54,7 +53,6 @@ PUT _snapshot/my_s3_repository
   }
 }
 ----
-// CONSOLE
 // TEST[skip:we don't have S3 setup while testing this]
 
 Most client settings can be added to the `elasticsearch.yml` configuration file
@@ -101,16 +99,16 @@ The following list contains the available client settings. Those that must be
 stored in the keystore are marked as "secure" and are *reloadable*; the other
 settings belong in the `elasticsearch.yml` file.
 
-`access_key` ({ref}/secure-settings.html[Secure])::
+`access_key` ({ref}/secure-settings.html[Secure], {ref}/secure-settings.html#reloadable-secure-settings[reloadable])::
 
     An S3 access key. If set, the `secret_key` setting must also be specified.
     If unset, the client will use the instance or container role instead.
 
-`secret_key` ({ref}/secure-settings.html[Secure])::
+`secret_key` ({ref}/secure-settings.html[Secure], {ref}/secure-settings.html#reloadable-secure-settings[reloadable])::
 
     An S3 secret key. If set, the `access_key` setting must also be specified.
 
-`session_token` ({ref}/secure-settings.html[Secure])::
+`session_token` ({ref}/secure-settings.html[Secure], {ref}/secure-settings.html#reloadable-secure-settings[reloadable])::
 
     An S3 session token. If set, the `access_key` and `secret_key` settings
     must also be specified.
@@ -119,7 +117,7 @@ settings belong in the `elasticsearch.yml` file.
 
     The S3 service endpoint to connect to. This defaults to `s3.amazonaws.com`
     but the
-    http://docs.aws.amazon.com/general/latest/gr/rande.html#s3_region[AWS
+    https://docs.aws.amazon.com/general/latest/gr/rande.html#s3_region[AWS
     documentation] lists alternative S3 endpoints. If you are using an
     <<repository-s3-compatible-services,S3-compatible service>> then you should
     set this to the service's endpoint.
@@ -137,11 +135,11 @@ settings belong in the `elasticsearch.yml` file.
 
     The port of a proxy to connect to S3 through.
 
-`proxy.username` ({ref}/secure-settings.html[Secure])::
+`proxy.username` ({ref}/secure-settings.html[Secure], {ref}/secure-settings.html#reloadable-secure-settings[reloadable])::
 
     The username to connect to the `proxy.host` with.
 
-`proxy.password` ({ref}/secure-settings.html[Secure])::
+`proxy.password` ({ref}/secure-settings.html[Secure], {ref}/secure-settings.html#reloadable-secure-settings[reloadable])::
 
     The password to connect to the `proxy.host` with.
 
@@ -186,7 +184,23 @@ pattern then you should set this setting to `true` when upgrading.
     https://docs.aws.amazon.com/AWSJavaSDK/latest/javadoc/com/amazonaws/services/s3/AmazonS3Builder.html#disableChunkedEncoding--[AWS
     Java SDK documentation] for details. Defaults to `false`.
 
-[float]
+`region`::
+
+    Allows specifying the signing region to use. Specificing this setting manually should not be necessary for most use cases. Generally,
+    the SDK will correctly guess the signing region to use. It should be considered an expert level setting to support S3-compatible APIs
+    that require https://docs.aws.amazon.com/general/latest/gr/signature-version-4.html[v4 signatures] and use a region other than the
+    default `us-east-1`. Defaults to empty string which means that the SDK will try to automatically determine the correct signing region.
+
+`signer_override`::
+
+    Allows specifying the name of the signature algorithm to use for signing requests by the S3 client. Specifying this setting should not
+    be necessary for most use cases. It should be considered an expert level setting to support S3-compatible APIs that do not support the
+    signing algorithm that the SDK automatically determines for them.
+    See the
+    https://docs.aws.amazon.com/AWSJavaSDK/latest/javadoc/com/amazonaws/ClientConfiguration.html#setSignerOverride-java.lang.String-[AWS
+    Java SDK documentation] for details. Defaults to empty string which means that no signing algorithm override will be used.
+
+[discrete]
 [[repository-s3-compatible-services]]
 ===== S3-compatible services
 
@@ -210,7 +224,7 @@ or supported.
 The `s3` repository type supports a number of settings to customize how data is
 stored in S3. These can be specified when creating the repository. For example:
 
-[source,js]
+[source,console]
 ----
 PUT _snapshot/my_s3_repository
 {
@@ -221,7 +235,6 @@ PUT _snapshot/my_s3_repository
   }
 }
 ----
-// CONSOLE
 // TEST[skip:we don't have S3 set up while testing this]
 
 The following settings are supported:
@@ -244,9 +257,9 @@ The following settings are supported:
 
 `chunk_size`::
 
-    Big files can be broken down into chunks during snapshotting if needed.  The
-    chunk size can be specified in bytes or by using size value notation, i.e.
-    `1gb`, `10mb`, `5kb`. Defaults to `1gb`.
+    Big files can be broken down into chunks during snapshotting if needed.
+    Specify the chunk size as a value and unit, for example:
+    `1GB`, `10MB`, `5KB`, `500B`. Defaults to `1GB`.
 
 `compress`::
 
@@ -265,7 +278,7 @@ include::repository-shared-settings.asciidoc[]
 
     Minimum threshold below which the chunk is uploaded using a single request.
     Beyond this threshold, the S3 repository will use the
-    http://docs.aws.amazon.com/AmazonS3/latest/dev/uploadobjusingmpu.html[AWS
+    https://docs.aws.amazon.com/AmazonS3/latest/dev/uploadobjusingmpu.html[AWS
     Multipart Upload API] to split the chunk into several parts, each of
     `buffer_size` length, and to upload each part in its own request. Note that
     setting a buffer size lower than `5mb` is not allowed since it will prevent
@@ -277,7 +290,7 @@ include::repository-shared-settings.asciidoc[]
 `canned_acl`::
 
     The S3 repository supports all
-    http://docs.aws.amazon.com/AmazonS3/latest/dev/acl-overview.html#canned-acl[S3
+    https://docs.aws.amazon.com/AmazonS3/latest/dev/acl-overview.html#canned-acl[S3
     canned ACLs] : `private`, `public-read`, `public-read-write`,
     `authenticated-read`, `log-delivery-write`, `bucket-owner-read`,
     `bucket-owner-full-control`. Defaults to `private`.  You could specify a
@@ -287,7 +300,7 @@ include::repository-shared-settings.asciidoc[]
 `storage_class`::
 
     Sets the S3 storage class for objects stored in the snapshot repository.
-    Values may be `standard`, `reduced_redundancy`, `standard_ia`
+    Values may be `standard`, `reduced_redundancy`, `standard_ia`, `onezone_ia`
     and `intelligent_tiering`. Defaults to `standard`.
     Changing this setting on an existing repository only affects the
     storage class for newly created objects, resulting in a mixed usage of
@@ -295,7 +308,7 @@ include::repository-shared-settings.asciidoc[]
     the storage class of existing objects.  Due to the extra complexity with the
     Glacier class lifecycle, it is not currently supported by the plugin.  For
     more information about the different classes, see
-    http://docs.aws.amazon.com/AmazonS3/latest/dev/storage-class-intro.html[AWS
+    https://docs.aws.amazon.com/AmazonS3/latest/dev/storage-class-intro.html[AWS
     Storage Classes Guide]
 
 NOTE: The option of defining client settings in the repository settings as
@@ -310,7 +323,7 @@ by the repository settings taking precedence over client settings.
 
 For example:
 
-[source,js]
+[source,console]
 ----
 PUT _snapshot/my_s3_repository
 {
@@ -322,7 +335,6 @@ PUT _snapshot/my_s3_repository
   }
 }
 ----
-// CONSOLE
 // TEST[skip:we don't have s3 set up while testing this]
 
 This sets up a repository that uses all client settings from the client
@@ -423,15 +435,17 @@ The bucket needs to exist to register a repository for snapshots. If you did not
 create the bucket then the repository registration will fail.
 
 [[repository-s3-aws-vpc]]
-[float]
+[discrete]
 ==== AWS VPC Bandwidth Settings
 
 AWS instances resolve S3 endpoints to a public IP. If the Elasticsearch
 instances reside in a private subnet in an AWS VPC then all traffic to S3 will
-go through that VPC's NAT instance. If your VPC's NAT instance is a smaller
-instance size (e.g. a t1.micro) or is handling a high volume of network traffic
+go through the VPC's NAT instance. If your VPC's NAT instance is a smaller
+instance size (e.g. a t2.micro) or is handling a high volume of network traffic
 your bandwidth to S3 may be limited by that NAT instance's networking bandwidth
-limitations.
+limitations. Instead we recommend creating a https://docs.aws.amazon.com/vpc/latest/userguide/vpc-endpoints.html[VPC endpoint]
+that enables connecting to S3 in instances that reside in a private subnet in an
+AWS VPC. This will eliminate any limitations imposed by the network bandwidth of your VPC's NAT instance. 
 
 Instances residing in a public subnet in an AWS VPC will connect to S3 via the
 VPC's internet gateway and not be bandwidth limited by the VPC's NAT instance.

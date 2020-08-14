@@ -23,51 +23,49 @@ Each `has_parent` query in a search can increase query time significantly.
 To use the `has_parent` query, your index must include a <<parent-join,join>>
 field mapping. For example:
 
-[source,js]
+[source,console]
 ----
-PUT /my-index
+PUT /my-index-000001
 {
-    "mappings": {
-        "properties" : {
-            "my-join-field" : {
-                "type" : "join",
-                "relations": {
-                    "parent": "child"
-                }
-            },
-            "tag" : {
-                "type" : "keyword"
-            }
+  "mappings": {
+    "properties": {
+      "my-join-field": {
+        "type": "join",
+        "relations": {
+          "parent": "child"
         }
+      },
+      "tag": {
+        "type": "keyword"
+      }
     }
+  }
 }
 
 ----
-// CONSOLE
 // TESTSETUP
 
 [[has-parent-query-ex-query]]
 ===== Example query
 
-[source,js]
+[source,console]
 ----
-GET /my-index/_search
+GET /my-index-000001/_search
 {
-    "query": {
-        "has_parent" : {
-            "parent_type" : "parent",
-            "query" : {
-                "term" : {
-                    "tag" : {
-                        "value" : "Elasticsearch"
-                    }
-                }
-            }
+  "query": {
+    "has_parent": {
+      "parent_type": "parent",
+      "query": {
+        "term": {
+          "tag": {
+            "value": "Elasticsearch"
+          }
         }
+      }
     }
+  }
 }
 ----
-// CONSOLE
 
 [[has-parent-top-level-params]]
 ==== Top-level parameters for `has_parent`
@@ -114,29 +112,28 @@ You can use this parameter to query multiple indices that may not contain the
 [[has-parent-query-performance]]
 ===== Sorting
 You cannot sort the results of a `has_parent` query using standard
-<<search-request-sort,sort options>>.
+<<sort-search-results,sort options>>.
 
 If you need to sort returned documents by a field in their parent documents, use
 a `function_score` query and sort by `_score`. For example, the following query
 sorts returned documents by the `view_count` field of their parent documents.
 
-[source,js]
+[source,console]
 ----
 GET /_search
 {
-    "query": {
-        "has_parent" : {
-            "parent_type" : "parent",
-            "score" : true,
-            "query" : {
-                "function_score" : {
-                    "script_score": {
-                        "script": "_score * doc['view_count'].value"
-                    }
-                }
-            }
+  "query": {
+    "has_parent": {
+      "parent_type": "parent",
+      "score": true,
+      "query": {
+        "function_score": {
+          "script_score": {
+            "script": "_score * doc['view_count'].value"
+          }
         }
+      }
     }
+  }
 }
 ----
-// CONSOLE

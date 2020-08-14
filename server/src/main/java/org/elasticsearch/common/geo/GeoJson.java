@@ -31,25 +31,27 @@ import org.elasticsearch.common.xcontent.ToXContentObject;
 import org.elasticsearch.common.xcontent.XContentBuilder;
 import org.elasticsearch.common.xcontent.XContentParser;
 import org.elasticsearch.common.xcontent.XContentSubParser;
-import org.elasticsearch.geo.geometry.Circle;
-import org.elasticsearch.geo.geometry.Geometry;
-import org.elasticsearch.geo.geometry.GeometryCollection;
-import org.elasticsearch.geo.geometry.GeometryVisitor;
-import org.elasticsearch.geo.geometry.Line;
-import org.elasticsearch.geo.geometry.LinearRing;
-import org.elasticsearch.geo.geometry.MultiLine;
-import org.elasticsearch.geo.geometry.MultiPoint;
-import org.elasticsearch.geo.geometry.MultiPolygon;
-import org.elasticsearch.geo.geometry.Point;
-import org.elasticsearch.geo.geometry.Polygon;
-import org.elasticsearch.geo.geometry.Rectangle;
-import org.elasticsearch.geo.geometry.ShapeType;
-import org.elasticsearch.geo.utils.GeometryValidator;
+import org.elasticsearch.geometry.Circle;
+import org.elasticsearch.geometry.Geometry;
+import org.elasticsearch.geometry.GeometryCollection;
+import org.elasticsearch.geometry.GeometryVisitor;
+import org.elasticsearch.geometry.Line;
+import org.elasticsearch.geometry.LinearRing;
+import org.elasticsearch.geometry.MultiLine;
+import org.elasticsearch.geometry.MultiPoint;
+import org.elasticsearch.geometry.MultiPolygon;
+import org.elasticsearch.geometry.Point;
+import org.elasticsearch.geometry.Polygon;
+import org.elasticsearch.geometry.Rectangle;
+import org.elasticsearch.geometry.ShapeType;
+import org.elasticsearch.geometry.utils.GeometryValidator;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
 import static org.elasticsearch.common.xcontent.ConstructingObjectParser.constructorArg;
 import static org.elasticsearch.common.xcontent.ConstructingObjectParser.optionalConstructorArg;
@@ -92,7 +94,7 @@ public final class GeoJson {
             public XContentBuilder visit(Circle circle) throws IOException {
                 builder.field(FIELD_RADIUS.getPreferredName(), DistanceUnit.METERS.toString(circle.getRadiusMeters()));
                 builder.field(ShapeParser.FIELD_COORDINATES.getPreferredName());
-                return coordinatesToXContent(circle.getLat(), circle.getLon(), circle.getAlt());
+                return coordinatesToXContent(circle.getY(), circle.getX(), circle.getZ());
             }
 
             @Override
@@ -130,9 +132,9 @@ public final class GeoJson {
                 builder.startArray(ShapeParser.FIELD_COORDINATES.getPreferredName());
                 for (int i = 0; i < multiPoint.size(); i++) {
                     Point p = multiPoint.get(i);
-                    builder.startArray().value(p.getLon()).value(p.getLat());
-                    if (p.hasAlt()) {
-                        builder.value(p.getAlt());
+                    builder.startArray().value(p.getX()).value(p.getY());
+                    if (p.hasZ()) {
+                        builder.value(p.getZ());
                     }
                     builder.endArray();
                 }
@@ -153,7 +155,7 @@ public final class GeoJson {
             @Override
             public XContentBuilder visit(Point point) throws IOException {
                 builder.field(ShapeParser.FIELD_COORDINATES.getPreferredName());
-                return coordinatesToXContent(point.getLat(), point.getLon(), point.getAlt());
+                return coordinatesToXContent(point.getY(), point.getX(), point.getZ());
             }
 
             @Override
@@ -169,8 +171,8 @@ public final class GeoJson {
             @Override
             public XContentBuilder visit(Rectangle rectangle) throws IOException {
                 builder.startArray(ShapeParser.FIELD_COORDINATES.getPreferredName());
-                coordinatesToXContent(rectangle.getMaxLat(), rectangle.getMinLon(), rectangle.getMinAlt()); // top left
-                coordinatesToXContent(rectangle.getMinLat(), rectangle.getMaxLon(), rectangle.getMaxAlt()); // bottom right
+                coordinatesToXContent(rectangle.getMaxY(), rectangle.getMinX(), rectangle.getMinZ()); // top left
+                coordinatesToXContent(rectangle.getMinY(), rectangle.getMaxX(), rectangle.getMaxZ()); // bottom right
                 return builder.endArray();
             }
 
@@ -185,9 +187,9 @@ public final class GeoJson {
             private XContentBuilder coordinatesToXContent(Line line) throws IOException {
                 builder.startArray();
                 for (int i = 0; i < line.length(); i++) {
-                    builder.startArray().value(line.getLon(i)).value(line.getLat(i));
-                    if (line.hasAlt()) {
-                        builder.value(line.getAlt(i));
+                    builder.startArray().value(line.getX(i)).value(line.getY(i));
+                    if (line.hasZ()) {
+                        builder.value(line.getZ(i));
                     }
                     builder.endArray();
                 }
@@ -206,7 +208,144 @@ public final class GeoJson {
         return builder.endObject();
     }
 
-    private static ConstructingObjectParser<Geometry, GeoJson> PARSER =
+    /**
+     * Produces that same GeoJSON as toXContent only in parsed map form
+     */
+    public static Map<String, Object> toMap(Geometry geometry) {
+        Map<String, Object> root = new HashMap<>();
+        root.put(FIELD_TYPE.getPreferredName(), getGeoJsonName(geometry));
+
+        geometry.visit(new GeometryVisitor<Void, RuntimeException>() {
+            @Override
+            public Void visit(Circle circle) {
+                root.put(FIELD_RADIUS.getPreferredName(), DistanceUnit.METERS.toString(circle.getRadiusMeters()));
+                root.put(ShapeParser.FIELD_COORDINATES.getPreferredName(), coordinatesToList(circle.getY(), circle.getX(), circle.getZ()));
+                return null;
+            }
+
+            @Override
+            public Void visit(GeometryCollection<?> collection) {
+                List<Object> geometries = new ArrayList<>(collection.size());
+
+                for (Geometry g : collection) {
+                    geometries.add(toMap(g));
+                }
+                root.put(FIELD_GEOMETRIES.getPreferredName(),  geometries);
+                return null;
+            }
+
+            @Override
+            public Void visit(Line line) {
+                root.put(ShapeParser.FIELD_COORDINATES.getPreferredName(), coordinatesToList(line));
+                return null;
+            }
+
+            @Override
+            public Void visit(LinearRing ring) {
+                throw new UnsupportedOperationException("linearRing cannot be serialized using GeoJson");
+            }
+
+            @Override
+            public Void visit(MultiLine multiLine) {
+                List<Object> lines = new ArrayList<>(multiLine.size());
+                for (int i = 0; i < multiLine.size(); i++) {
+                    lines.add(coordinatesToList(multiLine.get(i)));
+                }
+                root.put(ShapeParser.FIELD_COORDINATES.getPreferredName(), lines);
+                return null;
+            }
+
+            @Override
+            public Void visit(MultiPoint multiPoint) {
+                List<Object> points = new ArrayList<>(multiPoint.size());
+                for (int i = 0; i < multiPoint.size(); i++) {
+                    Point p = multiPoint.get(i);
+                    List<Object> point = new ArrayList<>();
+                    point.add(p.getX());
+                    point.add(p.getY());
+                    if (p.hasZ()) {
+                        point.add(p.getZ());
+                    }
+                    points.add(point);
+                }
+                root.put(ShapeParser.FIELD_COORDINATES.getPreferredName(), points);
+                return null;
+            }
+
+            @Override
+            public Void visit(MultiPolygon multiPolygon) {
+                List<Object> polygons = new ArrayList<>();
+                for (int i = 0; i < multiPolygon.size(); i++) {
+                    polygons.add(coordinatesToList(multiPolygon.get(i)));
+                }
+                root.put(ShapeParser.FIELD_COORDINATES.getPreferredName(), polygons);
+                return null;
+            }
+
+            @Override
+            public Void visit(Point point) {
+                root.put(ShapeParser.FIELD_COORDINATES.getPreferredName(), coordinatesToList(point.getY(), point.getX(), point.getZ()));
+                return null;
+            }
+
+            @Override
+            public Void visit(Polygon polygon) {
+                List<Object> coords = new ArrayList<>(polygon.getNumberOfHoles() + 1);
+                coords.add(coordinatesToList(polygon.getPolygon()));
+                for (int i = 0; i < polygon.getNumberOfHoles(); i++) {
+                    coords.add(coordinatesToList(polygon.getHole(i)));
+                }
+                root.put(ShapeParser.FIELD_COORDINATES.getPreferredName(), coords);
+                return null;
+            }
+
+            @Override
+            public Void visit(Rectangle rectangle) {
+                List<Object> coords = new ArrayList<>(2);
+                coords.add(coordinatesToList(rectangle.getMaxY(), rectangle.getMinX(), rectangle.getMinZ())); // top left
+                coords.add(coordinatesToList(rectangle.getMinY(), rectangle.getMaxX(), rectangle.getMaxZ())); // bottom right
+                root.put(ShapeParser.FIELD_COORDINATES.getPreferredName(), coords);
+                return null;
+            }
+
+            private List<Object> coordinatesToList(double lat, double lon, double alt) {
+                List<Object> coords = new ArrayList<>(3);
+                coords.add(lon);
+                coords.add(lat);
+                if (Double.isNaN(alt) == false) {
+                    coords.add(alt);
+                }
+                return coords;
+            }
+
+            private List<Object> coordinatesToList(Line line) {
+                List<Object> lines = new ArrayList<>(line.length());
+                for (int i = 0; i < line.length(); i++) {
+                    List<Object> coords = new ArrayList<>(3);
+                    coords.add(line.getX(i));
+                    coords.add(line.getY(i));
+                    if (line.hasZ()) {
+                        coords.add(line.getZ(i));
+                    }
+                    lines.add(coords);
+                }
+                return lines;
+            }
+
+            private List<Object> coordinatesToList(Polygon polygon) {
+                List<Object> coords = new ArrayList<>(polygon.getNumberOfHoles() + 1);
+                coords.add(coordinatesToList(polygon.getPolygon()));
+                for (int i = 0; i < polygon.getNumberOfHoles(); i++) {
+                    coords.add(coordinatesToList(polygon.getHole(i)));
+                }
+                return coords;
+            }
+
+        });
+        return root;
+    }
+
+    private static final ConstructingObjectParser<Geometry, GeoJson> PARSER =
         new ConstructingObjectParser<>("geojson", true, (a, c) -> {
             String type = (String) a[0];
             CoordinateNode coordinates = (CoordinateNode) a[1];
@@ -257,7 +396,7 @@ public final class GeoJson {
                 }
                 verifyNulls(type, geometries, orientation, null);
                 Point point = coordinates.asPoint();
-                return new Circle(point.getLat(), point.getLon(), point.getAlt(), radius.convert(DistanceUnit.METERS).value);
+                return new Circle(point.getX(), point.getY(), point.getZ(), radius.convert(DistanceUnit.METERS).value);
             case POINT:
                 verifyNulls(type, geometries, orientation, radius);
                 return coordinates.asPoint();
@@ -282,7 +421,7 @@ public final class GeoJson {
                 verifyNulls(type, geometries, orientation, radius);
                 return coordinates.asRectangle();
             default:
-                throw new ElasticsearchParseException("unsuppoted shape type " + type);
+                throw new ElasticsearchParseException("unsupported shape type " + type);
         }
     }
 
@@ -353,7 +492,7 @@ public final class GeoJson {
         if (parser.currentToken() == XContentParser.Token.VALUE_NUMBER) {
             throw new ElasticsearchParseException("geo coordinates greater than 3 dimensions are not supported");
         }
-        return new Point(lat, lon, alt);
+        return new Point(lon, lat, alt);
     }
 
     /**
@@ -382,17 +521,17 @@ public final class GeoJson {
         return geometry.visit(new GeometryVisitor<>() {
             @Override
             public String visit(Circle circle) {
-                return "circle";
+                return "Circle";
             }
 
             @Override
             public String visit(GeometryCollection<?> collection) {
-                return "geometrycollection";
+                return "GeometryCollection";
             }
 
             @Override
             public String visit(Line line) {
-                return "linestring";
+                return "LineString";
             }
 
             @Override
@@ -402,32 +541,32 @@ public final class GeoJson {
 
             @Override
             public String visit(MultiLine multiLine) {
-                return "multilinestring";
+                return "MultiLineString";
             }
 
             @Override
             public String visit(MultiPoint multiPoint) {
-                return "multipoint";
+                return "MultiPoint";
             }
 
             @Override
             public String visit(MultiPolygon multiPolygon) {
-                return "multipolygon";
+                return "MultiPolygon";
             }
 
             @Override
             public String visit(Point point) {
-                return "point";
+                return "Point";
             }
 
             @Override
             public String visit(Polygon polygon) {
-                return "polygon";
+                return "Polygon";
             }
 
             @Override
             public String visit(Rectangle rectangle) {
-                return "envelope";
+                return "Envelope";
             }
         });
     }
@@ -465,7 +604,7 @@ public final class GeoJson {
                 throw new ElasticsearchException("attempting to get number of dimensions on an empty coordinate node");
             }
             if (coordinate != null) {
-                return coordinate.hasAlt() ? 3 : 2;
+                return coordinate.hasZ() ? 3 : 2;
             }
             return children.get(0).numDimensions();
         }
@@ -513,10 +652,10 @@ public final class GeoJson {
             int i = orientation ? 0 : lats.length - 1;
             for (CoordinateNode node : children) {
                 Point point = node.asPoint();
-                lats[i] = point.getLat();
-                lons[i] = point.getLon();
+                lats[i] = point.getY();
+                lons[i] = point.getX();
                 if (alts != null) {
-                    alts[i] = point.getAlt();
+                    alts[i] = point.getZ();
                 }
                 i = orientation ? i + 1 : i - 1;
             }
@@ -536,12 +675,12 @@ public final class GeoJson {
 
         public Line asLineString(boolean coerce) {
             double[][] components = asLineComponents(true, coerce, false);
-            return new Line(components[0], components[1], components[2]);
+            return new Line(components[1], components[0], components[2]);
         }
 
         public LinearRing asLinearRing(boolean orientation, boolean coerce) {
             double[][] components = asLineComponents(orientation, coerce, true);
-            return new LinearRing(components[0], components[1], components[2]);
+            return new LinearRing(components[1], components[0], components[2]);
         }
 
         public MultiLine asMultiLineString(boolean coerce) {
@@ -592,13 +731,13 @@ public final class GeoJson {
             // verify coordinate bounds, correct if necessary
             Point uL = children.get(0).coordinate;
             Point lR = children.get(1).coordinate;
-            return new Rectangle(lR.getLat(), uL.getLat(), uL.getLon(), lR.getLon());
+            return new Rectangle(uL.getX(), lR.getX(), uL.getY(), lR.getY());
         }
 
         @Override
         public XContentBuilder toXContent(XContentBuilder builder, Params params) throws IOException {
             if (children == null) {
-                builder.startArray().value(coordinate.getLon()).value(coordinate.getLat()).endArray();
+                builder.startArray().value(coordinate.getX()).value(coordinate.getY()).endArray();
             } else {
                 builder.startArray();
                 for (CoordinateNode child : children) {
@@ -609,5 +748,4 @@ public final class GeoJson {
             return builder;
         }
     }
-
 }

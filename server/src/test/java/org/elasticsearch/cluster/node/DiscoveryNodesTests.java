@@ -44,6 +44,7 @@ import static org.hamcrest.CoreMatchers.equalTo;
 import static org.hamcrest.Matchers.arrayContainingInAnyOrder;
 import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.nullValue;
+import static org.hamcrest.Matchers.oneOf;
 
 public class DiscoveryNodesTests extends ESTestCase {
 
@@ -163,6 +164,35 @@ public class DiscoveryNodesTests extends ESTestCase {
         assertEquals(sortedNodes, returnedNodes);
     }
 
+    public void testDeltaListsMultipleNodes() {
+        final List<DiscoveryNode> discoveryNodes = randomNodes(3);
+
+        final DiscoveryNodes nodes0 = DiscoveryNodes.builder().add(discoveryNodes.get(0)).build();
+        final DiscoveryNodes nodes01 = DiscoveryNodes.builder(nodes0).add(discoveryNodes.get(1)).build();
+        final DiscoveryNodes nodes012 = DiscoveryNodes.builder(nodes01).add(discoveryNodes.get(2)).build();
+
+        assertThat(nodes01.delta(nodes0).shortSummary(), equalTo("added {" + discoveryNodes.get(1) + "}"));
+        assertThat(nodes012.delta(nodes0).shortSummary(), oneOf(
+            "added {" + discoveryNodes.get(1) + "," + discoveryNodes.get(2) + "}",
+            "added {" + discoveryNodes.get(2) + "," + discoveryNodes.get(1) + "}"));
+
+        assertThat(nodes0.delta(nodes01).shortSummary(), equalTo("removed {" + discoveryNodes.get(1) + "}"));
+        assertThat(nodes0.delta(nodes012).shortSummary(), oneOf(
+            "removed {" + discoveryNodes.get(1) + "," + discoveryNodes.get(2) + "}",
+            "removed {" + discoveryNodes.get(2) + "," + discoveryNodes.get(1) + "}"));
+
+        final DiscoveryNodes nodes01Local = DiscoveryNodes.builder(nodes01).localNodeId(discoveryNodes.get(1).getId()).build();
+        final DiscoveryNodes nodes02Local = DiscoveryNodes.builder(nodes012).localNodeId(discoveryNodes.get(1).getId()).build();
+
+        assertThat(nodes01Local.delta(nodes0).shortSummary(), equalTo(""));
+        assertThat(nodes02Local.delta(nodes0).shortSummary(), equalTo("added {" + discoveryNodes.get(2) + "}"));
+
+        assertThat(nodes0.delta(nodes01Local).shortSummary(), equalTo("removed {" + discoveryNodes.get(1) + "}"));
+        assertThat(nodes0.delta(nodes02Local).shortSummary(), oneOf(
+            "removed {" + discoveryNodes.get(1) + "," + discoveryNodes.get(2) + "}",
+            "removed {" + discoveryNodes.get(2) + "," + discoveryNodes.get(1) + "}"));
+    }
+
     public void testDeltas() {
         Set<DiscoveryNode> nodesA = new HashSet<>();
         nodesA.addAll(randomNodes(1 + randomInt(10)));
@@ -244,10 +274,12 @@ public class DiscoveryNodesTests extends ESTestCase {
             final Set<DiscoveryNodeRole> roles = new HashSet<>(randomSubsetOf(DiscoveryNodeRole.BUILT_IN_ROLES));
             if (frequently()) {
                 roles.add(new DiscoveryNodeRole("custom_role", "cr") {
+
                     @Override
-                    protected Setting<Boolean> roleSetting() {
+                    public Setting<Boolean> legacySetting() {
                         return null;
                     }
+
                 });
             }
             final DiscoveryNode node = newNode(idGenerator.getAndIncrement(), attributes, roles);

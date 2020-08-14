@@ -22,16 +22,20 @@ package org.elasticsearch.index.mapper;
 import org.apache.lucene.document.InetAddressPoint;
 import org.apache.lucene.index.DocValuesType;
 import org.apache.lucene.index.IndexableField;
+import org.elasticsearch.Version;
+import org.elasticsearch.cluster.metadata.IndexMetadata;
 import org.elasticsearch.common.Strings;
 import org.elasticsearch.common.bytes.BytesReference;
 import org.elasticsearch.common.compress.CompressedXContent;
 import org.elasticsearch.common.network.InetAddresses;
+import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.xcontent.ToXContent;
 import org.elasticsearch.common.xcontent.XContentBuilder;
 import org.elasticsearch.common.xcontent.XContentFactory;
 import org.elasticsearch.common.xcontent.XContentType;
 import org.elasticsearch.plugins.Plugin;
 import org.elasticsearch.test.InternalSettingsPlugin;
+import org.junit.Before;
 
 import java.io.IOException;
 import java.net.InetAddress;
@@ -39,6 +43,8 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
 
 import static org.elasticsearch.index.query.RangeQueryBuilder.GTE_FIELD;
 import static org.elasticsearch.index.query.RangeQueryBuilder.GT_FIELD;
@@ -47,7 +53,31 @@ import static org.elasticsearch.index.query.RangeQueryBuilder.LT_FIELD;
 import static org.hamcrest.Matchers.anyOf;
 import static org.hamcrest.Matchers.containsString;
 
-public class RangeFieldMapperTests extends AbstractNumericFieldMapperTestCase {
+
+public class RangeFieldMapperTests extends AbstractNumericFieldMapperTestCase<RangeFieldMapper.Builder> {
+
+    @Override
+    protected RangeFieldMapper.Builder newBuilder() {
+        return new RangeFieldMapper.Builder("range", RangeType.DATE)
+            .format("iso8601");
+    }
+
+    @Override
+    protected Set<String> unsupportedProperties() {
+        return Set.of("analyzer", "similarity");
+    }
+
+    @Before
+    public void addModifiers() {
+        addModifier("format", true, (a, b) -> {
+            a.format("basic_week_date");
+            b.format("strict_week_date");
+        });
+        addModifier("locale", true, (a, b) -> {
+            a.locale(Locale.CANADA);
+            b.locale(Locale.JAPAN);
+        });
+    }
 
     @Override
     protected Collection<Class<? extends Plugin>> getPlugins() {
@@ -121,7 +151,7 @@ public class RangeFieldMapperTests extends AbstractNumericFieldMapperTestCase {
         DocumentMapper mapper = parser.parse("type", new CompressedXContent(Strings.toString(mapping)));
         assertEquals(Strings.toString(mapping), mapper.mappingSource().toString());
 
-        ParsedDocument doc = mapper.parse(new SourceToParse("test", "type", "1", BytesReference.bytes(XContentFactory.jsonBuilder()
+        ParsedDocument doc = mapper.parse(new SourceToParse("test", "1", BytesReference.bytes(XContentFactory.jsonBuilder()
             .startObject()
             .startObject("field")
             .field(getFromField(), getFrom(type))
@@ -152,7 +182,7 @@ public class RangeFieldMapperTests extends AbstractNumericFieldMapperTestCase {
         DocumentMapper mapper = parser.parse("type", new CompressedXContent(Strings.toString(mapping)));
         assertEquals(Strings.toString(mapping), mapper.mappingSource().toString());
 
-        ParsedDocument doc = mapper.parse(new SourceToParse("test", "type", "1", BytesReference.bytes(XContentFactory.jsonBuilder()
+        ParsedDocument doc = mapper.parse(new SourceToParse("test", "1", BytesReference.bytes(XContentFactory.jsonBuilder()
             .startObject()
             .startObject("field")
             .field(getFromField(), getFrom(type))
@@ -176,7 +206,7 @@ public class RangeFieldMapperTests extends AbstractNumericFieldMapperTestCase {
         DocumentMapper mapper = parser.parse("type", new CompressedXContent(Strings.toString(mapping)));
         assertEquals(Strings.toString(mapping), mapper.mappingSource().toString());
 
-        ParsedDocument doc = mapper.parse(new SourceToParse("test", "type", "1", BytesReference.bytes(XContentFactory.jsonBuilder()
+        ParsedDocument doc = mapper.parse(new SourceToParse("test", "1", BytesReference.bytes(XContentFactory.jsonBuilder()
             .startObject()
             .startObject("field")
             .field(getFromField(), getFrom(type))
@@ -202,7 +232,7 @@ public class RangeFieldMapperTests extends AbstractNumericFieldMapperTestCase {
         DocumentMapper mapper = parser.parse("type", new CompressedXContent(Strings.toString(mapping)));
         assertEquals(Strings.toString(mapping), mapper.mappingSource().toString());
 
-        ParsedDocument doc = mapper.parse(new SourceToParse("test", "type", "1", BytesReference.bytes(XContentFactory.jsonBuilder()
+        ParsedDocument doc = mapper.parse(new SourceToParse("test", "1", BytesReference.bytes(XContentFactory.jsonBuilder()
             .startObject()
             .startObject("field")
             .field(getFromField(), getFrom(type))
@@ -241,7 +271,7 @@ public class RangeFieldMapperTests extends AbstractNumericFieldMapperTestCase {
 
         assertEquals(Strings.toString(mapping), mapper.mappingSource().toString());
 
-        ParsedDocument doc = mapper.parse(new SourceToParse("test", "type", "1", BytesReference.bytes(XContentFactory.jsonBuilder()
+        ParsedDocument doc = mapper.parse(new SourceToParse("test", "1", BytesReference.bytes(XContentFactory.jsonBuilder()
             .startObject()
             .startObject("field")
             .field(getFromField(), getFrom(type))
@@ -268,7 +298,7 @@ public class RangeFieldMapperTests extends AbstractNumericFieldMapperTestCase {
 
             ThrowingRunnable runnable = () -> mapper2
                     .parse(new SourceToParse(
-                            "test", "type", "1", BytesReference.bytes(XContentFactory.jsonBuilder().startObject().startObject("field")
+                            "test", "1", BytesReference.bytes(XContentFactory.jsonBuilder().startObject().startObject("field")
                                     .field(getFromField(), "5.2").field(getToField(), "10").endObject().endObject()),
                             XContentType.JSON));
             MapperParsingException e = expectThrows(MapperParsingException.class, runnable);
@@ -287,7 +317,7 @@ public class RangeFieldMapperTests extends AbstractNumericFieldMapperTestCase {
 
         assertEquals(Strings.toString(mapping), mapper.mappingSource().toString());
 
-        ParsedDocument doc1 = mapper.parse(new SourceToParse("test", "type", "1", BytesReference.bytes(XContentFactory.jsonBuilder()
+        ParsedDocument doc1 = mapper.parse(new SourceToParse("test", "1", BytesReference.bytes(XContentFactory.jsonBuilder()
             .startObject()
             .startObject("field")
             .field(GT_FIELD.getPreferredName(), "2.34")
@@ -296,7 +326,7 @@ public class RangeFieldMapperTests extends AbstractNumericFieldMapperTestCase {
             .endObject()),
             XContentType.JSON));
 
-        ParsedDocument doc2 = mapper.parse(new SourceToParse("test", "type", "1", BytesReference.bytes(XContentFactory.jsonBuilder()
+        ParsedDocument doc2 = mapper.parse(new SourceToParse("test", "1", BytesReference.bytes(XContentFactory.jsonBuilder()
             .startObject()
             .startObject("field")
             .field(GT_FIELD.getPreferredName(), "2")
@@ -324,7 +354,7 @@ public class RangeFieldMapperTests extends AbstractNumericFieldMapperTestCase {
         assertEquals(Strings.toString(mapping), mapper.mappingSource().toString());
 
         // test null value for min and max
-        ParsedDocument doc = mapper.parse(new SourceToParse("test", "type", "1", BytesReference.bytes(XContentFactory.jsonBuilder()
+        ParsedDocument doc = mapper.parse(new SourceToParse("test", "1", BytesReference.bytes(XContentFactory.jsonBuilder()
             .startObject()
             .startObject("field")
             .nullField(getFromField())
@@ -339,7 +369,7 @@ public class RangeFieldMapperTests extends AbstractNumericFieldMapperTestCase {
         assertThat(storedField.stringValue(), containsString(expected));
 
         // test null max value
-        doc = mapper.parse(new SourceToParse("test", "type", "1", BytesReference.bytes(XContentFactory.jsonBuilder()
+        doc = mapper.parse(new SourceToParse("test", "1", BytesReference.bytes(XContentFactory.jsonBuilder()
             .startObject()
             .startObject("field")
             .field(getFromField(), getFrom(type))
@@ -367,7 +397,7 @@ public class RangeFieldMapperTests extends AbstractNumericFieldMapperTestCase {
         assertThat(storedField.stringValue(), containsString(strVal));
 
         // test null range
-        doc = mapper.parse(new SourceToParse("test", "type", "1", BytesReference
+        doc = mapper.parse(new SourceToParse("test", "1", BytesReference
                 .bytes(XContentFactory.jsonBuilder()
                         .startObject()
                         .nullField("field")
@@ -394,7 +424,7 @@ public class RangeFieldMapperTests extends AbstractNumericFieldMapperTestCase {
         assertEquals(Strings.toString(mapping), mapper.mappingSource().toString());
 
         // test no bounds specified
-        ParsedDocument doc = mapper.parse(new SourceToParse("test", "type", "1", BytesReference.bytes(XContentFactory.jsonBuilder()
+        ParsedDocument doc = mapper.parse(new SourceToParse("test", "1", BytesReference.bytes(XContentFactory.jsonBuilder()
             .startObject()
             .startObject("field")
             .endObject()
@@ -416,7 +446,7 @@ public class RangeFieldMapperTests extends AbstractNumericFieldMapperTestCase {
 
     public void testIllegalArguments() throws Exception {
         XContentBuilder mapping = XContentFactory.jsonBuilder().startObject().startObject("type")
-            .startObject("properties").startObject("field").field("type", RangeFieldMapper.RangeType.INTEGER.name)
+            .startObject("properties").startObject("field").field("type", RangeType.INTEGER.name)
             .field("format", DATE_FORMAT).endObject().endObject().endObject().endObject();
 
         ThrowingRunnable runnable = () -> parser.parse("type", new CompressedXContent(Strings.toString(mapping)));
@@ -461,4 +491,35 @@ public class RangeFieldMapperTests extends AbstractNumericFieldMapperTestCase {
         assertEquals("Invalid format: [[test_format]]: Unknown pattern letter: t", e.getMessage());
     }
 
+    public void testParseSourceValue() {
+        Settings settings = Settings.builder().put(IndexMetadata.SETTING_VERSION_CREATED, Version.CURRENT.id).build();
+        Mapper.BuilderContext context = new Mapper.BuilderContext(settings, new ContentPath());
+
+        RangeFieldMapper longMapper = new RangeFieldMapper.Builder("field", RangeType.LONG).build(context);
+        Map<String, Object> longRange = Map.of("gte", 3.14, "lt", "42.9");
+        assertEquals(Map.of("gte", 3L, "lt", 42L), longMapper.parseSourceValue(longRange, null));
+
+        RangeFieldMapper dateMapper = new RangeFieldMapper.Builder("field", RangeType.DATE)
+            .format("yyyy/MM/dd||epoch_millis")
+            .build(context);
+        Map<String, Object> dateRange = Map.of("lt", "1990/12/29", "gte", 597429487111L);
+        assertEquals(Map.of("lt", "1990/12/29", "gte", "1988/12/06"),
+            dateMapper.parseSourceValue(dateRange, null));
+    }
+
+    public void testParseSourceValueWithFormat() {
+        Settings settings = Settings.builder().put(IndexMetadata.SETTING_VERSION_CREATED, Version.CURRENT.id).build();
+        Mapper.BuilderContext context = new Mapper.BuilderContext(settings, new ContentPath());
+
+        RangeFieldMapper longMapper = new RangeFieldMapper.Builder("field", RangeType.LONG).build(context);
+        Map<String, Object> longRange = Map.of("gte", 3.14, "lt", "42.9");
+        assertEquals(Map.of("gte", 3L, "lt", 42L), longMapper.parseSourceValue(longRange, null));
+
+        RangeFieldMapper dateMapper = new RangeFieldMapper.Builder("field", RangeType.DATE)
+            .format("strict_date_time")
+            .build(context);
+        Map<String, Object> dateRange = Map.of("lt", "1990-12-29T00:00:00.000Z");
+        assertEquals(Map.of("lt", "1990/12/29"), dateMapper.parseSourceValue(dateRange, "yyy/MM/dd"));
+        assertEquals(Map.of("lt", "662428800000"), dateMapper.parseSourceValue(dateRange, "epoch_millis"));
+    }
 }

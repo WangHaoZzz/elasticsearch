@@ -7,29 +7,31 @@
 Filters documents based on a provided <<modules-scripting-using,script>>. The
 `script` query is typically used in a <<query-filter-context,filter context>>.
 
+WARNING: Using scripts can result in slower search speeds. See
+<<scripts-and-search-speed>>.
+
 
 [[script-query-ex-request]]
 ==== Example request
 
-[source,js]
+[source,console]
 ----
 GET /_search
 {
-    "query": {
-        "bool" : {
-            "filter" : {
-                "script" : {
-                    "script" : {
-                        "source": "doc['num1'].value > 1",
-                        "lang": "painless"
-                     }
-                }
-            }
+  "query": {
+    "bool": {
+      "filter": {
+        "script": {
+          "script": {
+            "source": "doc['num1'].value > 1",
+            "lang": "painless"
+          }
         }
+      }
     }
+  }
 }
 ----
-// CONSOLE
 
 
 [[script-top-level-params]]
@@ -49,25 +51,28 @@ Like <<query-filter-context,filters>>, scripts are cached for faster execution.
 If you frequently change the arguments of a script, we recommend you store them
 in the script's `params` parameter. For example:
 
-[source,js]
+[source,console]
 ----
 GET /_search
 {
-    "query": {
-        "bool" : {
-            "filter" : {
-                "script" : {
-                    "script" : {
-                        "source" : "doc['num1'].value > params.param1",
-                        "lang"   : "painless",
-                        "params" : {
-                            "param1" : 5
-                        }
-                    }
-                }
+  "query": {
+    "bool": {
+      "filter": {
+        "script": {
+          "script": {
+            "source": "doc['num1'].value > params.param1",
+            "lang": "painless",
+            "params": {
+              "param1": 5
             }
+          }
         }
+      }
     }
+  }
 }
 ----
-// CONSOLE
+
+===== Allow expensive queries
+Script queries will not be executed if <<query-dsl-allow-expensive-queries, `search.allow_expensive_queries`>>
+is set to false.

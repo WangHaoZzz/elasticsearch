@@ -22,6 +22,7 @@ import com.carrotsearch.randomizedtesting.ReproduceErrorMessageBuilder;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.apache.lucene.util.Constants;
+import org.elasticsearch.bootstrap.JavaVersion;
 import org.elasticsearch.common.Strings;
 import org.elasticsearch.common.SuppressForbidden;
 import org.elasticsearch.test.ESIntegTestCase;
@@ -79,7 +80,7 @@ public class ReproduceInfoPrinter extends RunListener {
         String task = System.getProperty("tests.task");
 
         // append Gradle test runner test filter string
-        b.append(task);
+        b.append("'" + task + "'");
         b.append(" --tests \"");
         b.append(failure.getDescription().getClassName());
         final String methodName = failure.getDescription().getMethodName();
@@ -172,10 +173,8 @@ public class ReproduceInfoPrinter extends RunListener {
             appendOpt("tests.locale", Locale.getDefault().toLanguageTag());
             appendOpt("tests.timezone", TimeZone.getDefault().getID());
             appendOpt("tests.distribution", System.getProperty("tests.distribution"));
-            appendOpt("compiler.java", System.getProperty("compiler.java"));
-            appendOpt("runtime.java", System.getProperty("runtime.java"));
-            appendOpt("javax.net.ssl.keyStorePassword", System.getProperty("javax.net.ssl.keyStorePassword"));
-            appendOpt("javax.net.ssl.trustStorePassword", System.getProperty("javax.net.ssl.trustStorePassword"));
+            appendOpt("runtime.java", Integer.toString(JavaVersion.current().getVersion().get(0)));
+            appendOpt(ESTestCase.FIPS_SYSPROP, System.getProperty(ESTestCase.FIPS_SYSPROP));
             return this;
         }
 

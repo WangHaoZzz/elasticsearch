@@ -48,7 +48,7 @@ import org.elasticsearch.test.ESTestCase;
 import org.elasticsearch.test.tasks.MockTaskManager;
 import org.elasticsearch.threadpool.ThreadPool;
 import org.elasticsearch.transport.ConnectTransportException;
-import org.elasticsearch.transport.ConnectionManager;
+import org.elasticsearch.transport.ClusterConnectionManager;
 import org.elasticsearch.transport.ConnectionProfile;
 import org.elasticsearch.transport.RequestHandlerRegistry;
 import org.elasticsearch.transport.Transport;
@@ -92,11 +92,17 @@ public final class MockTransportService extends TransportService {
 
     private final Map<DiscoveryNode, List<Transport.Connection>> openConnections = new HashMap<>();
 
+    private final List<Runnable> onStopListeners = new CopyOnWriteArrayList<>();
+
     public static class TestPlugin extends Plugin {
         @Override
         public List<Setting<?>> getSettings() {
             return Arrays.asList(MockTaskManager.USE_MOCK_TASK_MANAGER_SETTING);
         }
+    }
+
+    public static MockTransportService createNewService(Settings settings, Version version, ThreadPool threadPool) {
+        return createNewService(settings, version, threadPool, null);
     }
 
     public static MockTransportService createNewService(Settings settings, Version version, ThreadPool threadPool,
@@ -105,33 +111,8 @@ public final class MockTransportService extends TransportService {
         return createNewService(settings, mockTransport, version, threadPool, clusterSettings, Collections.emptySet());
     }
 
-    /**
-     * Returns a unique port range for this JVM starting from the computed base port
-     */
-    public static String getPortRange() {
-        return getBasePort() + "-" + (getBasePort() + 99); // upper bound is inclusive
-    }
-
-    protected static int getBasePort() {
-        // some tests use MockTransportService to do network based testing. Yet, we run tests in multiple JVMs that means
-        // concurrent tests could claim port that another JVM just released and if that test tries to simulate a disconnect it might
-        // be smart enough to re-connect depending on what is tested. To reduce the risk, since this is very hard to debug we use
-        // a different default port range per JVM unless the incoming settings override it
-        // use a non-default base port otherwise some cluster in this JVM might reuse a port
-
-        // We rely on Gradle implementation details here, the worker IDs are long values incremented by one  for the
-        // lifespan of the daemon this means that they can get larger than the allowed port range.
-        // Ephemeral ports on Linux start at 32768 so we modulo to make sure that we don't exceed that.
-        // This is safe as long as we have fewer than 224 Gradle workers running in parallel
-        // See also: https://github.com/elastic/elasticsearch/issues/44134
-        final String workerId = System.getProperty(ESTestCase.TEST_WORKER_SYS_PROPERTY);
-        final int startAt = workerId == null ? 0 : Math.floorMod(Long.valueOf(workerId), 223);
-        assert startAt >= 0 : "Unexpected test worker Id, resulting port range would be negative";
-        return 10300 + (startAt * 100);
-    }
-
     public static MockNioTransport newMockTransport(Settings settings, Version version, ThreadPool threadPool) {
-        settings = Settings.builder().put(TransportSettings.PORT.getKey(), getPortRange()).put(settings).build();
+        settings = Settings.builder().put(TransportSettings.PORT.getKey(), ESTestCase.getPortRange()).put(settings).build();
         NamedWriteableRegistry namedWriteableRegistry = new NamedWriteableRegistry(ClusterModule.getNamedWriteables());
         return new MockNioTransport(settings, version, threadPool, new NetworkService(Collections.emptyList()),
             new MockPageCacheRecycler(settings), namedWriteableRegistry, new NoneCircuitBreakerService());
@@ -139,7 +120,13 @@ public final class MockTransportService extends TransportService {
 
     public static MockTransportService createNewService(Settings settings, Transport transport, Version version, ThreadPool threadPool,
                                                         @Nullable ClusterSettings clusterSettings, Set<String> taskHeaders) {
-        return new MockTransportService(settings, transport, threadPool, TransportService.NOOP_TRANSPORT_INTERCEPTOR,
+        return createNewService(settings, transport, version, threadPool, clusterSettings, taskHeaders, NOOP_TRANSPORT_INTERCEPTOR);
+    }
+
+    public static MockTransportService createNewService(Settings settings, Transport transport, Version version, ThreadPool threadPool,
+                                                        @Nullable ClusterSettings clusterSettings, Set<String> taskHeaders,
+                                                        TransportInterceptor interceptor) {
+        return new MockTransportService(settings, transport, threadPool, interceptor,
             boundAddress ->
                 new DiscoveryNode(Node.NODE_NAME_SETTING.get(settings), UUIDs.randomBase64UUID(), boundAddress.publishAddress(),
                     Node.NODE_ATTRIBUTES.getAsMap(settings), DiscoveryNode.getRolesFromSettings(settings), version),
@@ -179,7 +166,7 @@ public final class MockTransportService extends TransportService {
                                  Function<BoundTransportAddress, DiscoveryNode> localNodeFactory,
                                  @Nullable ClusterSettings clusterSettings, Set<String> taskHeaders) {
         super(settings, transport, threadPool, interceptor, localNodeFactory, clusterSettings, taskHeaders,
-            new StubbableConnectionManager(new ConnectionManager(settings, transport), settings, transport));
+            new StubbableConnectionManager(new ClusterConnectionManager(settings, transport)));
         this.original = transport.getDelegate();
     }
 
@@ -209,19 +196,26 @@ public final class MockTransportService extends TransportService {
     }
 
     /**
-     * Clears the rule associated with the provided delegate service.
+     * Clears all the inbound rules.
      */
-    public void clearRule(TransportService transportService) {
+    public void clearInboundRules() {
+        transport().clearInboundBehaviors();
+    }
+
+    /**
+     * Clears the outbound rules associated with the provided delegate service.
+     */
+    public void clearOutboundRules(TransportService transportService) {
         for (TransportAddress transportAddress : extractTransportAddresses(transportService)) {
-            clearRule(transportAddress);
+            clearOutboundRules(transportAddress);
         }
     }
 
     /**
-     * Clears the rule associated with the provided delegate address.
+     * Clears the outbound rules associated with the provided delegate address.
      */
-    public void clearRule(TransportAddress transportAddress) {
-        transport().clearBehavior(transportAddress);
+    public void clearOutboundRules(TransportAddress transportAddress) {
+        transport().clearOutboundBehaviors(transportAddress);
         connectionManager().clearBehavior(transportAddress);
     }
 
@@ -429,6 +423,15 @@ public final class MockTransportService extends TransportService {
     }
 
     /**
+     * Adds a new handling behavior that is used when the defined request is received.
+     *
+     */
+    public <R extends TransportRequest> void addRequestHandlingBehavior(String actionName,
+                                                                        StubbableTransport.RequestHandlingBehavior<R> handlingBehavior) {
+        transport().addRequestHandlingBehavior(actionName, handlingBehavior);
+    }
+
+    /**
      * Adds a new send behavior that is used for communication with the given delegate service.
      *
      * @return {@code true} if no other send behavior was registered for any of the addresses bound by delegate service.
@@ -488,7 +491,7 @@ public final class MockTransportService extends TransportService {
      * @return {@code true} if no other get connection behavior was registered for this address before.
      */
     public boolean addGetConnectionBehavior(TransportAddress transportAddress, StubbableConnectionManager.GetConnectionBehavior behavior) {
-        return connectionManager().addConnectBehavior(transportAddress, behavior);
+        return connectionManager().addGetConnectionBehavior(transportAddress, behavior);
     }
 
     /**
@@ -526,27 +529,36 @@ public final class MockTransportService extends TransportService {
     }
 
     @Override
-    public Transport.Connection openConnection(DiscoveryNode node, ConnectionProfile profile) {
-        Transport.Connection connection = super.openConnection(node, profile);
-
-        synchronized (openConnections) {
-            openConnections.computeIfAbsent(node, n -> new CopyOnWriteArrayList<>()).add(connection);
-            connection.addCloseListener(ActionListener.wrap(() -> {
-                synchronized (openConnections) {
-                    List<Transport.Connection> connections = openConnections.get(node);
-                    boolean remove = connections.remove(connection);
-                    assert remove : "Should have removed connection";
-                    if (connections.isEmpty()) {
-                        openConnections.remove(node);
+    public void openConnection(DiscoveryNode node, ConnectionProfile connectionProfile, ActionListener<Transport.Connection> listener) {
+        super.openConnection(node, connectionProfile, ActionListener.delegateFailure(listener, (l, connection) -> {
+            synchronized (openConnections) {
+                openConnections.computeIfAbsent(node, n -> new CopyOnWriteArrayList<>()).add(connection);
+                connection.addCloseListener(ActionListener.wrap(() -> {
+                    synchronized (openConnections) {
+                        List<Transport.Connection> connections = openConnections.get(node);
+                        boolean remove = connections.remove(connection);
+                        assert remove : "Should have removed connection";
+                        if (connections.isEmpty()) {
+                            openConnections.remove(node);
+                        }
+                        if (openConnections.isEmpty()) {
+                            openConnections.notifyAll();
+                        }
                     }
-                    if (openConnections.isEmpty()) {
-                        openConnections.notifyAll();
-                    }
-                }
-            }));
-        }
+                }));
+            }
+            l.onResponse(connection);
+        }));
+    }
 
-        return connection;
+    public void addOnStopListener(Runnable listener) {
+        onStopListeners.add(listener);
+    }
+
+    @Override
+    protected void doStop() {
+        onStopListeners.forEach(Runnable::run);
+        super.doStop();
     }
 
     @Override

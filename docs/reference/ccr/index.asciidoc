@@ -1,10 +1,7 @@
 [role="xpack"]
 [testenv="platinum"]
 [[xpack-ccr]]
-= {ccr-cap}
-
-[partintro]
---
+== {ccr-cap}
 
 The {ccr} (CCR) feature enables replication of indices in remote clusters to a
 local cluster. This functionality can be used in some common production use
@@ -13,6 +10,7 @@ cases:
 * Disaster recovery in case a primary cluster fails. A secondary cluster can
   serve as a hot backup
 * Geo-proximity so that reads can be served locally
+* Prevent search load from interfering with indexing by offloading search to a secondary cluster
 
 This guide provides an overview of {ccr}:
 
@@ -22,7 +20,6 @@ This guide provides an overview of {ccr}:
 * <<ccr-getting-started>>
 * <<ccr-upgrading>>
 
---
 
 include::overview.asciidoc[]
 include::requirements.asciidoc[]

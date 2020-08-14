@@ -24,10 +24,12 @@ import org.apache.http.client.methods.HttpGet;
 import org.apache.http.client.methods.HttpPost;
 import org.apache.http.client.methods.HttpPut;
 import org.elasticsearch.client.security.ChangePasswordRequest;
+import org.elasticsearch.client.security.ClearPrivilegesCacheRequest;
 import org.elasticsearch.client.security.ClearRealmCacheRequest;
 import org.elasticsearch.client.security.ClearRolesCacheRequest;
 import org.elasticsearch.client.security.CreateApiKeyRequest;
 import org.elasticsearch.client.security.CreateTokenRequest;
+import org.elasticsearch.client.security.DelegatePkiAuthenticationRequest;
 import org.elasticsearch.client.security.DeletePrivilegesRequest;
 import org.elasticsearch.client.security.DeleteRoleMappingRequest;
 import org.elasticsearch.client.security.DeleteRoleRequest;
@@ -182,6 +184,15 @@ final class SecurityRequestConverters {
         return new Request(HttpPost.METHOD_NAME, endpoint);
     }
 
+    static Request clearPrivilegesCache(ClearPrivilegesCacheRequest disableCacheRequest) {
+        String endpoint = new RequestConverters.EndpointBuilder()
+            .addPathPartAsIs("_security/privilege")
+            .addCommaSeparatedPathParts(disableCacheRequest.applications())
+            .addPathPart("_clear_cache")
+            .build();
+        return new Request(HttpPost.METHOD_NAME, endpoint);
+    }
+
     static Request deleteRoleMapping(DeleteRoleMappingRequest deleteRoleMappingRequest) {
         final String endpoint = new RequestConverters.EndpointBuilder()
             .addPathPartAsIs("_security/role_mapping")
@@ -218,6 +229,12 @@ final class SecurityRequestConverters {
     static Request createToken(CreateTokenRequest createTokenRequest) throws IOException {
         Request request = new Request(HttpPost.METHOD_NAME, "/_security/oauth2/token");
         request.setEntity(createEntity(createTokenRequest, REQUEST_BODY_CONTENT_TYPE));
+        return request;
+    }
+
+    static Request delegatePkiAuthentication(DelegatePkiAuthenticationRequest delegatePkiAuthenticationRequest) throws IOException {
+        Request request = new Request(HttpPost.METHOD_NAME, "/_security/delegate_pki");
+        request.setEntity(createEntity(delegatePkiAuthenticationRequest, REQUEST_BODY_CONTENT_TYPE));
         return request;
     }
 
@@ -294,7 +311,7 @@ final class SecurityRequestConverters {
         if (Strings.hasText(getApiKeyRequest.getRealmName())) {
             request.addParameter("realm_name", getApiKeyRequest.getRealmName());
         }
-
+        request.addParameter("owner", Boolean.toString(getApiKeyRequest.ownedByAuthenticatedUser()));
         return request;
     }
 

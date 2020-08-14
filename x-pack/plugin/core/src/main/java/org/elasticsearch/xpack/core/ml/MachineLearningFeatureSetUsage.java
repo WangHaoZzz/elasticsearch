@@ -5,6 +5,7 @@
  */
 package org.elasticsearch.xpack.core.ml;
 
+import org.elasticsearch.Version;
 import org.elasticsearch.common.io.stream.StreamInput;
 import org.elasticsearch.common.io.stream.StreamOutput;
 import org.elasticsearch.common.xcontent.XContentBuilder;
@@ -26,16 +27,27 @@ public class MachineLearningFeatureSetUsage extends XPackFeatureSet.Usage {
     public static final String MODEL_SIZE = "model_size";
     public static final String CREATED_BY = "created_by";
     public static final String NODE_COUNT = "node_count";
+    public static final String DATA_FRAME_ANALYTICS_JOBS_FIELD = "data_frame_analytics_jobs";
+    public static final String INFERENCE_FIELD = "inference";
 
     private final Map<String, Object> jobsUsage;
     private final Map<String, Object> datafeedsUsage;
+    private final Map<String, Object> analyticsUsage;
+    private final Map<String, Object> inferenceUsage;
     private final int nodeCount;
 
-    public MachineLearningFeatureSetUsage(boolean available, boolean enabled, Map<String, Object> jobsUsage,
-                                          Map<String, Object> datafeedsUsage, int nodeCount) {
+    public MachineLearningFeatureSetUsage(boolean available,
+                                          boolean enabled,
+                                          Map<String, Object> jobsUsage,
+                                          Map<String, Object> datafeedsUsage,
+                                          Map<String, Object> analyticsUsage,
+                                          Map<String, Object> inferenceUsage,
+                                          int nodeCount) {
         super(XPackField.MACHINE_LEARNING, available, enabled);
         this.jobsUsage = Objects.requireNonNull(jobsUsage);
         this.datafeedsUsage = Objects.requireNonNull(datafeedsUsage);
+        this.analyticsUsage = Objects.requireNonNull(analyticsUsage);
+        this.inferenceUsage = Objects.requireNonNull(inferenceUsage);
         this.nodeCount = nodeCount;
     }
 
@@ -43,7 +55,14 @@ public class MachineLearningFeatureSetUsage extends XPackFeatureSet.Usage {
         super(in);
         this.jobsUsage = in.readMap();
         this.datafeedsUsage = in.readMap();
+        this.analyticsUsage = in.readMap();
+        this.inferenceUsage = in.readMap();
         this.nodeCount = in.readInt();
+    }
+
+    @Override
+    public Version getMinimalSupportedVersion() {
+        return Version.V_7_0_0;
     }
 
     @Override
@@ -51,18 +70,18 @@ public class MachineLearningFeatureSetUsage extends XPackFeatureSet.Usage {
         super.writeTo(out);
         out.writeMap(jobsUsage);
         out.writeMap(datafeedsUsage);
+        out.writeMap(analyticsUsage);
+        out.writeMap(inferenceUsage);
         out.writeInt(nodeCount);
     }
 
     @Override
     protected void innerXContent(XContentBuilder builder, Params params) throws IOException {
         super.innerXContent(builder, params);
-        if (jobsUsage != null) {
-            builder.field(JOBS_FIELD, jobsUsage);
-        }
-        if (datafeedsUsage != null) {
-            builder.field(DATAFEEDS_FIELD, datafeedsUsage);
-        }
+        builder.field(JOBS_FIELD, jobsUsage);
+        builder.field(DATAFEEDS_FIELD, datafeedsUsage);
+        builder.field(DATA_FRAME_ANALYTICS_JOBS_FIELD, analyticsUsage);
+        builder.field(INFERENCE_FIELD, inferenceUsage);
         if (nodeCount >= 0) {
             builder.field(NODE_COUNT, nodeCount);
         }

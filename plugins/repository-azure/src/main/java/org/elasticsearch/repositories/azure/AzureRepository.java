@@ -23,7 +23,8 @@ import com.microsoft.azure.storage.LocationMode;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.apache.logging.log4j.message.ParameterizedMessage;
-import org.elasticsearch.cluster.metadata.RepositoryMetaData;
+import org.elasticsearch.cluster.metadata.RepositoryMetadata;
+import org.elasticsearch.cluster.service.ClusterService;
 import org.elasticsearch.common.Strings;
 import org.elasticsearch.common.blobstore.BlobPath;
 import org.elasticsearch.common.blobstore.BlobStore;
@@ -31,9 +32,8 @@ import org.elasticsearch.common.settings.Setting;
 import org.elasticsearch.common.settings.Setting.Property;
 import org.elasticsearch.common.unit.ByteSizeValue;
 import org.elasticsearch.common.xcontent.NamedXContentRegistry;
-import org.elasticsearch.env.Environment;
+import org.elasticsearch.indices.recovery.RecoverySettings;
 import org.elasticsearch.repositories.blobstore.BlobStoreRepository;
-import org.elasticsearch.threadpool.ThreadPool;
 
 import java.util.Locale;
 import java.util.function.Function;
@@ -76,9 +76,13 @@ public class AzureRepository extends BlobStoreRepository {
     private final AzureStorageService storageService;
     private final boolean readonly;
 
-    public AzureRepository(RepositoryMetaData metadata, Environment environment, NamedXContentRegistry namedXContentRegistry,
-            AzureStorageService storageService, ThreadPool threadPool) {
-        super(metadata, environment.settings(), namedXContentRegistry, threadPool, buildBasePath(metadata));
+    public AzureRepository(
+        final RepositoryMetadata metadata,
+        final NamedXContentRegistry namedXContentRegistry,
+        final AzureStorageService storageService,
+        final ClusterService clusterService,
+        final RecoverySettings recoverySettings) {
+        super(metadata, namedXContentRegistry, clusterService, recoverySettings, buildBasePath(metadata));
         this.chunkSize = Repository.CHUNK_SIZE_SETTING.get(metadata.settings());
         this.storageService = storageService;
 
@@ -92,7 +96,7 @@ public class AzureRepository extends BlobStoreRepository {
         }
     }
 
-    private static BlobPath buildBasePath(RepositoryMetaData metadata) {
+    private static BlobPath buildBasePath(RepositoryMetadata metadata) {
         final String basePath = Strings.trimLeadingCharacter(Repository.BASE_PATH_SETTING.get(metadata.settings()), '/');
         if (Strings.hasLength(basePath)) {
             // Remove starting / if any

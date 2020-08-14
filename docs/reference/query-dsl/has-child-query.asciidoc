@@ -27,47 +27,45 @@ the `has_child` query, use it as rarely as possible.
 To use the `has_child` query, your index must include a <<parent-join,join>>
 field mapping. For example:
 
-[source,js]
+[source,console]
 ----
-PUT /my_index
+PUT /my-index-000001
 {
-    "mappings": {
-        "properties" : {
-            "my-join-field" : {
-                "type" : "join",
-                "relations": {
-                    "parent": "child"
-                }
-            }
+  "mappings": {
+    "properties": {
+      "my-join-field": {
+        "type": "join",
+        "relations": {
+          "parent": "child"
         }
+      }
     }
+  }
 }
 
 ----
-// CONSOLE
 // TESTSETUP
 
 [[has-child-query-ex-query]]
 ===== Example query
 
-[source,js]
+[source,console]
 ----
 GET /_search
 {
-    "query": {
-        "has_child" : {
-            "type" : "child",
-            "query" : {
-                "match_all" : {}
-            },
-            "max_children": 10,
-            "min_children": 2,
-            "score_mode" : "min"
-        }
+  "query": {
+    "has_child": {
+      "type": "child",
+      "query": {
+        "match_all": {}
+      },
+      "max_children": 10,
+      "min_children": 2,
+      "score_mode": "min"
     }
+  }
 }
 ----
-// CONSOLE
 
 [[has-child-top-level-params]]
 ==== Top-level parameters for `has_child`
@@ -107,7 +105,7 @@ document does not meet this limit, it is excluded from the search results.
 +
 --
 (Optional, string) Indicates how scores for matching child documents affect the
-root parent document's <<query-filter-context,relevance score>>. Valid values
+root parent document's <<relevance-scores,relevance score>>. Valid values
 are:
 
 `none` (Default)::
@@ -133,29 +131,28 @@ Add together the relevance scores of all matching child documents.
 [[has-child-query-performance]]
 ===== Sorting
 You cannot sort the results of a `has_child` query using standard
-<<request-body-search-sort,sort options>>.
+<<sort-search-results,sort options>>.
 
 If you need to sort returned documents by a field in their child documents, use
 a `function_score` query and sort by `_score`. For example, the following query
 sorts returned documents by the `click_count` field of their child documents.
 
-[source,js]
+[source,console]
 ----
 GET /_search
 {
-    "query": {
-        "has_child" : {
-            "type" : "child",
-            "query" : {
-                "function_score" : {
-                    "script_score": {
-                        "script": "_score * doc['click_count'].value"
-                    }
-                }
-            },
-            "score_mode" : "max"
+  "query": {
+    "has_child": {
+      "type": "child",
+      "query": {
+        "function_score": {
+          "script_score": {
+            "script": "_score * doc['click_count'].value"
+          }
         }
+      },
+      "score_mode": "max"
     }
+  }
 }
 ----
-// CONSOLE

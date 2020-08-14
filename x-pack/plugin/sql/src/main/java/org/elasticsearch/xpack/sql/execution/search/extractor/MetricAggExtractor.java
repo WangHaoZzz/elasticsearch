@@ -12,7 +12,6 @@ import org.elasticsearch.search.aggregations.bucket.MultiBucketsAggregation.Buck
 import org.elasticsearch.search.aggregations.bucket.filter.InternalFilter;
 import org.elasticsearch.search.aggregations.matrix.stats.InternalMatrixStats;
 import org.elasticsearch.search.aggregations.metrics.InternalAvg;
-import org.elasticsearch.search.aggregations.metrics.InternalCardinality;
 import org.elasticsearch.search.aggregations.metrics.InternalMax;
 import org.elasticsearch.search.aggregations.metrics.InternalMin;
 import org.elasticsearch.search.aggregations.metrics.InternalNumericMetricsAggregation;
@@ -20,7 +19,9 @@ import org.elasticsearch.search.aggregations.metrics.InternalStats;
 import org.elasticsearch.search.aggregations.metrics.InternalSum;
 import org.elasticsearch.search.aggregations.metrics.InternalTDigestPercentileRanks;
 import org.elasticsearch.search.aggregations.metrics.InternalTDigestPercentiles;
+import org.elasticsearch.xpack.ql.execution.search.extractor.BucketExtractor;
 import org.elasticsearch.xpack.sql.SqlIllegalArgumentException;
+import org.elasticsearch.xpack.sql.common.io.SqlStreamInput;
 import org.elasticsearch.xpack.sql.querydsl.agg.Aggs;
 import org.elasticsearch.xpack.sql.util.DateUtils;
 
@@ -46,7 +47,7 @@ public class MetricAggExtractor implements BucketExtractor {
         this.name = name;
         this.property = property;
         this.innerKey = innerKey;
-        this. isDateTimeBased =isDateTimeBased;
+        this.isDateTimeBased = isDateTimeBased;
         this.zoneId = zoneId;
     }
 
@@ -55,7 +56,8 @@ public class MetricAggExtractor implements BucketExtractor {
         property = in.readString();
         innerKey = in.readOptionalString();
         isDateTimeBased = in.readBoolean();
-        zoneId = ZoneId.of(in.readString());
+
+        zoneId = SqlStreamInput.asSqlStream(in).zoneId();
     }
 
     @Override
@@ -64,7 +66,6 @@ public class MetricAggExtractor implements BucketExtractor {
         out.writeString(property);
         out.writeOptionalString(innerKey);
         out.writeBoolean(isDateTimeBased);
-        out.writeString(zoneId.getId());
     }
 
     String name() {
@@ -147,9 +148,6 @@ public class MetricAggExtractor implements BucketExtractor {
         }
         if (agg instanceof InternalAvg) {
             return hasValue((InternalAvg) agg);
-        }
-        if (agg instanceof InternalCardinality) {
-            return hasValue((InternalCardinality) agg);
         }
         if (agg instanceof InternalSum) {
             return hasValue((InternalSum) agg);

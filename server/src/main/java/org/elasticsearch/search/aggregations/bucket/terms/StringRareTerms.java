@@ -26,7 +26,6 @@ import org.elasticsearch.common.xcontent.XContentBuilder;
 import org.elasticsearch.search.DocValueFormat;
 import org.elasticsearch.search.aggregations.BucketOrder;
 import org.elasticsearch.search.aggregations.InternalAggregations;
-import org.elasticsearch.search.aggregations.pipeline.PipelineAggregator;
 
 import java.io.IOException;
 import java.util.List;
@@ -87,11 +86,6 @@ public class StringRareTerms extends InternalMappedRareTerms<StringRareTerms, St
         }
 
         @Override
-        Bucket newBucket(long docCount, InternalAggregations aggs) {
-            return new Bucket(termBytes, docCount, aggs, format);
-        }
-
-        @Override
         protected final XContentBuilder keyToXContent(XContentBuilder builder) throws IOException {
             return builder.field(CommonFields.KEY.getPreferredName(), getKeyAsString());
         }
@@ -107,10 +101,9 @@ public class StringRareTerms extends InternalMappedRareTerms<StringRareTerms, St
         }
     }
 
-    StringRareTerms(String name, BucketOrder order, List<PipelineAggregator> pipelineAggregators,
-                           Map<String, Object> metaData, DocValueFormat format,
+    StringRareTerms(String name, BucketOrder order, Map<String, Object> metadata, DocValueFormat format,
                            List<StringRareTerms.Bucket> buckets, long maxDocCount, SetBackedScalingCuckooFilter filter) {
-        super(name, order, pipelineAggregators, metaData, format, buckets, maxDocCount, filter);
+        super(name, order, metadata, format, buckets, maxDocCount, filter);
     }
 
     /**
@@ -127,7 +120,7 @@ public class StringRareTerms extends InternalMappedRareTerms<StringRareTerms, St
 
     @Override
     public StringRareTerms create(List<StringRareTerms.Bucket> buckets) {
-        return new StringRareTerms(name, order, pipelineAggregators(), metaData, format, buckets, maxDocCount, filter);
+        return new StringRareTerms(name, order, metadata, format, buckets, maxDocCount, filter);
     }
 
     @Override
@@ -138,8 +131,7 @@ public class StringRareTerms extends InternalMappedRareTerms<StringRareTerms, St
     @Override
     protected StringRareTerms createWithFilter(String name, List<StringRareTerms.Bucket> buckets,
                                                SetBackedScalingCuckooFilter filterFilter) {
-        return new StringRareTerms(name, order, pipelineAggregators(), metaData, format,
-            buckets, maxDocCount, filterFilter);
+        return new StringRareTerms(name, order, metadata, format, buckets, maxDocCount, filterFilter);
     }
 
     @Override
@@ -156,4 +148,10 @@ public class StringRareTerms extends InternalMappedRareTerms<StringRareTerms, St
     public void addToFilter(SetBackedScalingCuckooFilter filter, StringRareTerms.Bucket bucket) {
         filter.add(bucket.termBytes);
     }
+
+    @Override
+    Bucket createBucket(long docCount, InternalAggregations aggs, StringRareTerms.Bucket prototype) {
+        return new Bucket(prototype.termBytes, docCount, aggs, format);
+    }
+
 }

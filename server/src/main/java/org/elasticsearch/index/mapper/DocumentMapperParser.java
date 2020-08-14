@@ -23,6 +23,7 @@ import org.elasticsearch.Version;
 import org.elasticsearch.common.Nullable;
 import org.elasticsearch.common.collect.Tuple;
 import org.elasticsearch.common.compress.CompressedXContent;
+import org.elasticsearch.common.time.DateFormatter;
 import org.elasticsearch.common.xcontent.LoggingDeprecationHandler;
 import org.elasticsearch.common.xcontent.NamedXContentRegistry;
 import org.elasticsearch.common.xcontent.XContentHelper;
@@ -66,14 +67,15 @@ public class DocumentMapperParser {
 
     public Mapper.TypeParser.ParserContext parserContext() {
         return new Mapper.TypeParser.ParserContext(similarityService::getSimilarity, mapperService,
-                typeParsers::get, indexVersionCreated, queryShardContextSupplier);
+                typeParsers::get, indexVersionCreated, queryShardContextSupplier, null);
+    }
+
+    public Mapper.TypeParser.ParserContext parserContext(DateFormatter dateFormatter) {
+        return new Mapper.TypeParser.ParserContext(similarityService::getSimilarity, mapperService,
+            typeParsers::get, indexVersionCreated, queryShardContextSupplier, dateFormatter);
     }
 
     public DocumentMapper parse(@Nullable String type, CompressedXContent source) throws MapperParsingException {
-        return parse(type, source, null);
-    }
-
-    public DocumentMapper parse(@Nullable String type, CompressedXContent source, String defaultSource) throws MapperParsingException {
         Map<String, Object> mapping = null;
         if (source != null) {
             Map<String, Object> root = XContentHelper.convertToMap(source.compressedReference(), true, XContentType.JSON).v2();
@@ -84,22 +86,14 @@ public class DocumentMapperParser {
         if (mapping == null) {
             mapping = new HashMap<>();
         }
-        return parse(type, mapping, defaultSource);
+        return parse(type, mapping);
     }
 
     @SuppressWarnings({"unchecked"})
-    private DocumentMapper parse(String type, Map<String, Object> mapping, String defaultSource) throws MapperParsingException {
+    private DocumentMapper parse(String type, Map<String, Object> mapping) throws MapperParsingException {
         if (type == null) {
             throw new MapperParsingException("Failed to derive type");
         }
-
-        if (defaultSource != null) {
-            Tuple<String, Map<String, Object>> t = extractMapping(MapperService.DEFAULT_MAPPING, defaultSource);
-            if (t.v2() != null) {
-                XContentHelper.mergeDefaults(mapping, t.v2());
-            }
-        }
-
 
         Mapper.TypeParser.ParserContext parserContext = parserContext();
         // parse RootObjectMapper

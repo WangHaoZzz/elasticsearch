@@ -19,12 +19,10 @@
 
 package org.elasticsearch.analysis.common;
 
-import org.apache.logging.log4j.LogManager;
 import org.apache.lucene.analysis.CharArraySet;
 import org.apache.lucene.analysis.TokenStream;
 import org.apache.lucene.analysis.miscellaneous.WordDelimiterGraphFilter;
 import org.apache.lucene.analysis.miscellaneous.WordDelimiterIterator;
-import org.elasticsearch.common.logging.DeprecationLogger;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.env.Environment;
 import org.elasticsearch.index.IndexSettings;
@@ -40,6 +38,7 @@ import static org.apache.lucene.analysis.miscellaneous.WordDelimiterGraphFilter.
 import static org.apache.lucene.analysis.miscellaneous.WordDelimiterGraphFilter.CATENATE_WORDS;
 import static org.apache.lucene.analysis.miscellaneous.WordDelimiterGraphFilter.GENERATE_NUMBER_PARTS;
 import static org.apache.lucene.analysis.miscellaneous.WordDelimiterGraphFilter.GENERATE_WORD_PARTS;
+import static org.apache.lucene.analysis.miscellaneous.WordDelimiterGraphFilter.IGNORE_KEYWORDS;
 import static org.apache.lucene.analysis.miscellaneous.WordDelimiterGraphFilter.PRESERVE_ORIGINAL;
 import static org.apache.lucene.analysis.miscellaneous.WordDelimiterGraphFilter.SPLIT_ON_CASE_CHANGE;
 import static org.apache.lucene.analysis.miscellaneous.WordDelimiterGraphFilter.SPLIT_ON_NUMERICS;
@@ -47,9 +46,6 @@ import static org.apache.lucene.analysis.miscellaneous.WordDelimiterGraphFilter.
 import static org.elasticsearch.analysis.common.WordDelimiterTokenFilterFactory.parseTypes;
 
 public class WordDelimiterGraphTokenFilterFactory extends AbstractTokenFilterFactory {
-
-    private static final DeprecationLogger DEPRECATION_LOGGER =
-        new DeprecationLogger(LogManager.getLogger(WordDelimiterGraphTokenFilterFactory.class));
 
     private final byte[] charTypeTable;
     private final int flags;
@@ -92,6 +88,8 @@ public class WordDelimiterGraphTokenFilterFactory extends AbstractTokenFilterFac
         // If set, causes trailing "'s" to be removed for each subword: "O'Neil's" => "O", "Neil"
         flags |= getFlag(STEM_ENGLISH_POSSESSIVE, settings, "stem_english_possessive", true);
         // If not null is the set of tokens to protect from being delimited
+        flags |= getFlag(IGNORE_KEYWORDS, settings, "ignore_keywords", false);
+        // If set, suppresses processing terms with KeywordAttribute#isKeyword()=true.
         Set<?> protectedWords = Analysis.getWordSet(env, settings, "protected_words");
         this.protoWords = protectedWords == null ? null : CharArraySet.copy(protectedWords);
         this.flags = flags;

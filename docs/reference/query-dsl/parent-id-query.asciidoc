@@ -20,47 +20,45 @@ the following example.
 . Create an index with a <<parent-join,join>> field mapping.
 +
 --
-[source,js]
+[source,console]
 ----
-PUT /my-index
+PUT /my-index-000001
 {
-    "mappings": {
-        "properties" : {
-            "my-join-field" : {
-                "type" : "join",
-                "relations": {
-                    "my-parent": "my-child"
-                }
-            }
+  "mappings": {
+    "properties": {
+      "my-join-field": {
+        "type": "join",
+        "relations": {
+          "my-parent": "my-child"
         }
+      }
     }
+  }
 }
 
 ----
-// CONSOLE
 // TESTSETUP
 --
 
 . Index a parent document with an ID of `1`.
 +
 --
-[source,js]
+[source,console]
 ----
-PUT /my-index/_doc/1?refresh
+PUT /my-index-000001/_doc/1?refresh
 {
   "text": "This is a parent document.",
   "my-join-field": "my-parent"
 }
 ----
-// CONSOLE
 --
 
 . Index a child document of the parent document.
 +
 --
-[source,js]
+[source,console]
 ----
-PUT /my-index/_doc/2?routing=1&refresh
+PUT /my-index-000001/_doc/2?routing=1&refresh
 {
   "text": "This is a child document.",
   "my_join_field": {
@@ -69,7 +67,6 @@ PUT /my-index/_doc/2?routing=1&refresh
   }
 }
 ----
-// CONSOLE
 --
 
 [[parent-id-query-ex-query]]
@@ -78,9 +75,9 @@ PUT /my-index/_doc/2?routing=1&refresh
 The following search returns child documents for a parent document with an ID of
 `1`.
 
-[source,js]
+[source,console]
 ----
-GET /my-index/_search
+GET /my-index-000001/_search
 {
   "query": {
       "parent_id": {
@@ -90,7 +87,6 @@ GET /my-index/_search
   }
 }
 ----
-// CONSOLE
 
 [[parent-id-top-level-params]]
 ==== Top-level parameters for `parent_id`

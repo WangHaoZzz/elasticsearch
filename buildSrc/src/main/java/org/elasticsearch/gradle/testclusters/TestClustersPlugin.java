@@ -18,250 +18,167 @@
  */
 package org.elasticsearch.gradle.testclusters;
 
-import groovy.lang.Closure;
 import org.elasticsearch.gradle.DistributionDownloadPlugin;
-import org.elasticsearch.gradle.ElasticsearchDistribution;
 import org.elasticsearch.gradle.ReaperPlugin;
 import org.elasticsearch.gradle.ReaperService;
-import org.elasticsearch.gradle.test.RestTestRunnerTask;
+import org.elasticsearch.gradle.info.BuildParams;
+import org.elasticsearch.gradle.info.GlobalBuildInfoPlugin;
+import org.elasticsearch.gradle.internal.InternalDistributionDownloadPlugin;
+import org.elasticsearch.gradle.util.GradleUtils;
 import org.gradle.api.NamedDomainObjectContainer;
 import org.gradle.api.Plugin;
 import org.gradle.api.Project;
 import org.gradle.api.Task;
 import org.gradle.api.execution.TaskActionListener;
 import org.gradle.api.execution.TaskExecutionListener;
+import org.gradle.api.invocation.Gradle;
 import org.gradle.api.logging.Logger;
 import org.gradle.api.logging.Logging;
-import org.gradle.api.plugins.ExtraPropertiesExtension;
+import org.gradle.api.provider.Provider;
 import org.gradle.api.tasks.TaskState;
 
 import java.io.File;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.stream.Collectors;
+
+import static org.elasticsearch.gradle.util.GradleUtils.noop;
 
 public class TestClustersPlugin implements Plugin<Project> {
 
-    private static final String LIST_TASK_NAME = "listTestClusters";
     public static final String EXTENSION_NAME = "testClusters";
+    public static final String THROTTLE_SERVICE_NAME = "testClustersThrottle";
 
-    private static final Logger logger =  Logging.getLogger(TestClustersPlugin.class);
-    private static final String TESTCLUSTERS_INSPECT_FAILURE = "testclusters.inspect.failure";
-
-    private final Map<Task, List<ElasticsearchCluster>> usedClusters = new HashMap<>();
-    private final Map<ElasticsearchCluster, Integer> claimsInventory = new HashMap<>();
-    private final Set<ElasticsearchCluster> runningClusters = new HashSet<>();
-    private final Boolean allowClusterToSurvive = Boolean.valueOf(System.getProperty(TESTCLUSTERS_INSPECT_FAILURE, "false"));
-
-    private ReaperService reaper;
+    private static final String LIST_TASK_NAME = "listTestClusters";
+    private static final String REGISTRY_SERVICE_NAME = "testClustersRegistry";
+    private static final Logger logger = Logging.getLogger(TestClustersPlugin.class);
 
     @Override
     public void apply(Project project) {
-        project.getPlugins().apply(DistributionDownloadPlugin.class);
+        project.getRootProject().getPluginManager().apply(GlobalBuildInfoPlugin.class);
+        if (BuildParams.isInternal()) {
+            project.getPlugins().apply(InternalDistributionDownloadPlugin.class);
+        } else {
+            project.getPlugins().apply(DistributionDownloadPlugin.class);
+        }
 
         project.getRootProject().getPluginManager().apply(ReaperPlugin.class);
-        reaper = project.getRootProject().getExtensions().getByType(ReaperService.class);
+
+        ReaperService reaper = project.getRootProject().getExtensions().getByType(ReaperService.class);
 
         // enable the DSL to describe clusters
-        NamedDomainObjectContainer<ElasticsearchCluster> container = createTestClustersContainerExtension(project);
+        NamedDomainObjectContainer<ElasticsearchCluster> container = createTestClustersContainerExtension(project, reaper);
 
         // provide a task to be able to list defined clusters.
         createListClustersTask(project, container);
 
-        // create DSL for tasks to mark clusters these use
-        createUseClusterTaskExtension(project, container);
+        // register cluster registry as a global build service
+        project.getGradle().getSharedServices().registerIfAbsent(REGISTRY_SERVICE_NAME, TestClustersRegistry.class, noop());
 
-        // When we know what tasks will run, we claim the clusters of those task to differentiate between clusters
-        // that are defined in the build script and the ones that will actually be used in this invocation of gradle
-        // we use this information to determine when the last task that required the cluster executed so that we can
-        // terminate the cluster right away and free up resources.
-        configureClaimClustersHook(project);
+        // register throttle so we only run at most max-workers/2 nodes concurrently
+        project.getGradle()
+            .getSharedServices()
+            .registerIfAbsent(
+                THROTTLE_SERVICE_NAME,
+                TestClustersThrottle.class,
+                spec -> spec.getMaxParallelUsages().set(Math.max(1, project.getGradle().getStartParameter().getMaxWorkerCount() / 2))
+            );
 
-        // Before each task, we determine if a cluster needs to be started for that task.
-        configureStartClustersHook(project);
-
-        // After each task we determine if there are clusters that are no longer needed.
-        configureStopClustersHook(project);
+        // register cluster hooks
+        project.getRootProject().getPluginManager().apply(TestClustersHookPlugin.class);
     }
 
-    private NamedDomainObjectContainer<ElasticsearchCluster> createTestClustersContainerExtension(Project project) {
-        NamedDomainObjectContainer<ElasticsearchDistribution> distros = DistributionDownloadPlugin.getContainer(project);
-
+    private NamedDomainObjectContainer<ElasticsearchCluster> createTestClustersContainerExtension(Project project, ReaperService reaper) {
         // Create an extensions that allows describing clusters
         NamedDomainObjectContainer<ElasticsearchCluster> container = project.container(
             ElasticsearchCluster.class,
-            name -> new ElasticsearchCluster(
-                project.getPath(),
-                name,
-                project,
-                reaper,
-                i -> distros.create(name + "-" + i),
-                new File(project.getBuildDir(), "testclusters")
-            )
+            name -> new ElasticsearchCluster(project.getPath(), name, project, reaper, new File(project.getBuildDir(), "testclusters"))
         );
         project.getExtensions().add(EXTENSION_NAME, container);
         return container;
     }
 
-
     private void createListClustersTask(Project project, NamedDomainObjectContainer<ElasticsearchCluster> container) {
-        Task listTask = project.getTasks().create(LIST_TASK_NAME);
-        listTask.setGroup("ES cluster formation");
-        listTask.setDescription("Lists all ES clusters configured for this project");
-        listTask.doLast((Task task) ->
-            container.forEach(cluster ->
-                logger.lifecycle("   * {}: {}", cluster.getName(), cluster.getNumberOfNodes())
-            )
-        );
-    }
-
-    private void createUseClusterTaskExtension(Project project, NamedDomainObjectContainer<ElasticsearchCluster> container) {
-        // register an extension for all current and future tasks, so that any task can declare that it wants to use a
-        // specific cluster.
-        project.getTasks().all((Task task) ->
-            task.getExtensions().findByType(ExtraPropertiesExtension.class)
-                .set(
-                    "useCluster",
-                    new Closure<Void>(project, task) {
-                        public void doCall(ElasticsearchCluster cluster) {
-                            if (container.contains(cluster) == false) {
-                                throw new TestClustersException(
-                                    "Task " + task.getPath() + " can't use test cluster from" +
-                                    " another project " + cluster
-                                );
-                            }
-                            Object thisObject = this.getThisObject();
-                            if (thisObject instanceof Task == false) {
-                                throw new AssertionError("Expected " + thisObject + " to be an instance of " +
-                                    "Task, but got: " + thisObject.getClass());
-                            }
-                            usedClusters.computeIfAbsent(task, k -> new ArrayList<>()).add(cluster);
-                            for (ElasticsearchNode node : cluster.getNodes()) {
-                                ((Task) thisObject).dependsOn(node.getDistribution().getExtracted());
-                            }
-                            if (thisObject instanceof RestTestRunnerTask) {
-                                ((RestTestRunnerTask) thisObject).testCluster(cluster);
-                            }
-                        }
-                    })
-        );
-    }
-
-    private void configureClaimClustersHook(Project project) {
-        // Once we know all the tasks that need to execute, we claim all the clusters that belong to those and count the
-        // claims so we'll know when it's safe to stop them.
-        project.getGradle().getTaskGraph().whenReady(taskExecutionGraph -> {
-            Set<String> forExecution = taskExecutionGraph.getAllTasks().stream()
-                .map(Task::getPath)
-                .collect(Collectors.toSet());
-
-            usedClusters.forEach((task, listOfClusters) ->
-                listOfClusters.forEach(elasticsearchCluster -> {
-                    if (forExecution.contains(task.getPath())) {
-                        elasticsearchCluster.freeze();
-                        claimsInventory.put(elasticsearchCluster, claimsInventory.getOrDefault(elasticsearchCluster, 0) + 1);
-                    }
-                }));
-            if (claimsInventory.isEmpty() == false) {
-                logger.info("Claims inventory: {}", claimsInventory);
-            }
+        // Task is never up to date so we can pass an lambda for the task action
+        project.getTasks().register(LIST_TASK_NAME, task -> {
+            task.setGroup("ES cluster formation");
+            task.setDescription("Lists all ES clusters configured for this project");
+            task.doLast(
+                (Task t) -> container.forEach(cluster -> logger.lifecycle("   * {}: {}", cluster.getName(), cluster.getNumberOfNodes()))
+            );
         });
+
     }
 
-    private void configureStartClustersHook(Project project) {
-        project.getGradle().addListener(
-            new TaskActionListener() {
+    static class TestClustersHookPlugin implements Plugin<Project> {
+        @Override
+        public void apply(Project project) {
+            if (project != project.getRootProject()) {
+                throw new IllegalStateException(this.getClass().getName() + " can only be applied to the root project.");
+            }
+
+            Provider<TestClustersRegistry> registryProvider = GradleUtils.getBuildService(
+                project.getGradle().getSharedServices(),
+                REGISTRY_SERVICE_NAME
+            );
+            TestClustersRegistry registry = registryProvider.get();
+
+            // When we know what tasks will run, we claim the clusters of those task to differentiate between clusters
+            // that are defined in the build script and the ones that will actually be used in this invocation of gradle
+            // we use this information to determine when the last task that required the cluster executed so that we can
+            // terminate the cluster right away and free up resources.
+            configureClaimClustersHook(project.getGradle(), registry);
+
+            // Before each task, we determine if a cluster needs to be started for that task.
+            configureStartClustersHook(project.getGradle(), registry);
+
+            // After each task we determine if there are clusters that are no longer needed.
+            configureStopClustersHook(project.getGradle(), registry);
+        }
+
+        private static void configureClaimClustersHook(Gradle gradle, TestClustersRegistry registry) {
+            // Once we know all the tasks that need to execute, we claim all the clusters that belong to those and count the
+            // claims so we'll know when it's safe to stop them.
+            gradle.getTaskGraph().whenReady(taskExecutionGraph -> {
+                taskExecutionGraph.getAllTasks()
+                    .stream()
+                    .filter(task -> task instanceof TestClustersAware)
+                    .map(task -> (TestClustersAware) task)
+                    .flatMap(task -> task.getClusters().stream())
+                    .forEach(registry::claimCluster);
+            });
+        }
+
+        private static void configureStartClustersHook(Gradle gradle, TestClustersRegistry registry) {
+            gradle.addListener(new TaskActionListener() {
                 @Override
                 public void beforeActions(Task task) {
+                    if (task instanceof TestClustersAware == false) {
+                        return;
+                    }
                     // we only start the cluster before the actions, so we'll not start it if the task is up-to-date
-                    List<ElasticsearchCluster> neededButNotRunning = usedClusters.getOrDefault(
-                        task,
-                        Collections.emptyList()
-                    )
-                        .stream()
-                        .filter(cluster -> runningClusters.contains(cluster) == false)
-                        .collect(Collectors.toList());
-
-                    neededButNotRunning
-                        .forEach(elasticsearchCluster -> {
-                            elasticsearchCluster.start();
-                            runningClusters.add(elasticsearchCluster);
-                        });
+                    TestClustersAware awareTask = (TestClustersAware) task;
+                    awareTask.beforeStart();
+                    awareTask.getClusters().forEach(registry::maybeStartCluster);
                 }
+
                 @Override
                 public void afterActions(Task task) {}
-            }
-        );
-    }
+            });
+        }
 
-    private void configureStopClustersHook(Project project) {
-        project.getGradle().addListener(
-            new TaskExecutionListener() {
+        private static void configureStopClustersHook(Gradle gradle, TestClustersRegistry registry) {
+            gradle.addListener(new TaskExecutionListener() {
                 @Override
                 public void afterExecute(Task task, TaskState state) {
+                    if (task instanceof TestClustersAware == false) {
+                        return;
+                    }
                     // always unclaim the cluster, even if _this_ task is up-to-date, as others might not have been
                     // and caused the cluster to start.
-                    List<ElasticsearchCluster> clustersUsedByTask = usedClusters.getOrDefault(
-                        task,
-                        Collections.emptyList()
-                    );
-                    if (clustersUsedByTask.isEmpty()) {
-                        return;
-                    }
-                    logger.info("Clusters were used, stopping and releasing permits");
-                    final int permitsToRelease;
-                    if (state.getFailure() != null) {
-                        // If the task fails, and other tasks use this cluster, the other task will likely never be
-                        // executed at all, so we will never be called again to un-claim and terminate it.
-                        clustersUsedByTask.forEach(cluster -> stopCluster(cluster, true));
-                        permitsToRelease = clustersUsedByTask.stream()
-                            .map(cluster -> cluster.getNumberOfNodes())
-                            .reduce(Integer::sum).get();
-                    } else {
-                        clustersUsedByTask.forEach(
-                            cluster -> claimsInventory.put(cluster, claimsInventory.getOrDefault(cluster, 0) - 1)
-                        );
-                        List<ElasticsearchCluster> stoppingClusers = claimsInventory.entrySet().stream()
-                            .filter(entry -> entry.getValue() == 0)
-                            .filter(entry -> runningClusters.contains(entry.getKey()))
-                            .map(Map.Entry::getKey)
-                            .collect(Collectors.toList());
-                        stoppingClusers.forEach(cluster -> {
-                            stopCluster(cluster, false);
-                            runningClusters.remove(cluster);
-                        });
-                    }
+                    ((TestClustersAware) task).getClusters().forEach(cluster -> registry.stopCluster(cluster, state.getFailure() != null));
                 }
+
                 @Override
                 public void beforeExecute(Task task) {}
-            }
-        );
-    }
-
-    private void stopCluster(ElasticsearchCluster cluster, boolean taskFailed) {
-        if (allowClusterToSurvive) {
-            logger.info("Not stopping clusters, disabled by property");
-            if (taskFailed) {
-                // task failed or this is the last one to stop
-                for (int i=1 ; ; i += i) {
-                    logger.lifecycle(
-                        "No more test clusters left to run, going to sleep because {} was set," +
-                            " interrupt (^C) to stop clusters.", TESTCLUSTERS_INSPECT_FAILURE
-                    );
-                    try {
-                        Thread.sleep(1000 * i);
-                    } catch (InterruptedException e) {
-                        Thread.currentThread().interrupt();
-                        return;
-                    }
-                }
-            }
+            });
         }
-        cluster.stop(taskFailed);
     }
 }

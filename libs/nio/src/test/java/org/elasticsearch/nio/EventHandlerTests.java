@@ -68,7 +68,9 @@ public class EventHandlerTests extends ESTestCase {
         SocketChannel rawChannel = mock(SocketChannel.class);
         when(rawChannel.finishConnect()).thenReturn(true);
         NioSocketChannel channel = new NioSocketChannel(rawChannel);
-        when(rawChannel.socket()).thenReturn(mock(Socket.class));
+        Socket socket = mock(Socket.class);
+        when(rawChannel.socket()).thenReturn(socket);
+        when(socket.getChannel()).thenReturn(rawChannel);
         context = new DoNotRegisterSocketContext(channel, selector, channelExceptionHandler, readWriteHandler);
         channel.setContext(context);
         handler.handleRegistration(context);
@@ -274,7 +276,7 @@ public class EventHandlerTests extends ESTestCase {
     }
 
     private static Config.Socket getSocketConfig() {
-        return new Config.Socket(randomBoolean(), randomBoolean(), randomBoolean(), -1, -1, mock(InetSocketAddress.class),
+        return new Config.Socket(randomBoolean(), randomBoolean(), -1, -1, -1, randomBoolean(), -1, -1, mock(InetSocketAddress.class),
             randomBoolean());
     }
 }

@@ -44,7 +44,7 @@ public class RestForceMergeActionTests extends RestActionTestCase {
 
     @Before
     public void setUpAction() {
-        new RestForceMergeAction(Settings.EMPTY, controller());
+        controller().registerHandler(new RestForceMergeAction());
     }
 
     public void testBodyRejection() throws Exception {

@@ -1,60 +1,60 @@
 [[search]]
 == Search APIs
 
-Most search APIs are <<search-multi-index,multi-index>>, with the
+Most search APIs support <<search-multi-index,multi-target syntax>>, with the
 exception of the <<search-explain>> endpoints.
 
-[float]
+[discrete]
 [[search-routing]]
 === Routing
 
 When executing a search, Elasticsearch will pick the "best" copy of the data
 based on the <<search-adaptive-replica,adaptive replica selection>> formula.
 Which shards will be searched on can also be controlled by providing the
-`routing` parameter. For example, when indexing tweets, the routing value can be
-the user name:
+`routing` parameter.
 
-[source,js]
+For example, the following indexing request routes documents to shard `1`:
+
+[source,console]
 --------------------------------------------------
-POST /twitter/_doc?routing=kimchy
+POST /my-index-000001/_doc?routing=1
 {
-    "user" : "kimchy",
-    "postDate" : "2009-11-15T14:12:12",
-    "message" : "trying out Elasticsearch"
+  "@timestamp": "2099-11-15T13:12:00",
+  "message": "GET /search HTTP/1.1 200 1070000",
+  "user": {
+    "id": "kimchy"
+  }
 }
 --------------------------------------------------
-// CONSOLE
 
-In such a case, if we want to search only on the tweets for a specific
-user, we can specify it as the routing, resulting in the search hitting
-only the relevant shard:
+Later, you can use the `routing` parameter in a search request to search only
+the specified shard. The following search requests hits only shard `1`.
 
-[source,js]
+[source,console]
 --------------------------------------------------
-POST /twitter/_search?routing=kimchy
+POST /my-index-000001/_search?routing=1
 {
-    "query": {
-        "bool" : {
-            "must" : {
-                "query_string" : {
-                    "query" : "some query string here"
-                }
-            },
-            "filter" : {
-                "term" : { "user" : "kimchy" }
-            }
+  "query": {
+    "bool": {
+      "must": {
+        "query_string": {
+          "query": "some query string here"
         }
+      },
+      "filter": {
+        "term": { "user.id": "kimchy" }
+      }
     }
+  }
 }
 --------------------------------------------------
-// CONSOLE
 // TEST[continued]
 
 The routing parameter can be multi valued represented as a comma
 separated string. This will result in hitting the relevant shards where
 the routing values match to.
 
-[float]
+[discrete]
 [[search-adaptive-replica]]
 === Adaptive Replica Selection
 
@@ -70,22 +70,21 @@ based on a number of criteria:
 This can be turned off by changing the dynamic cluster setting
 `cluster.routing.use_adaptive_replica_selection` from `true` to `false`:
 
-[source,js]
+[source,console]
 --------------------------------------------------
 PUT /_cluster/settings
 {
-    "transient": {
-        "cluster.routing.use_adaptive_replica_selection": false
-    }
+  "transient": {
+    "cluster.routing.use_adaptive_replica_selection": false
+  }
 }
 --------------------------------------------------
-// CONSOLE
 
 If adaptive replica selection is turned off, searches are sent to the
 index/indices shards in a round robin fashion between all copies of the data
 (primaries and replicas).
 
-[float]
+[discrete]
 [[stats-groups]]
 === Stats Groups
 
@@ -95,20 +94,19 @@ statistics aggregation per group. It can later be retrieved using the
 specifically. For example, here is a search body request that associate
 the request with two different groups:
 
-[source,js]
+[source,console]
 --------------------------------------------------
 POST /_search
 {
-    "query" : {
-        "match_all" : {}
-    },
-    "stats" : ["group1", "group2"]
+  "query" : {
+    "match_all" : {}
+  },
+  "stats" : ["group1", "group2"]
 }
 --------------------------------------------------
-// CONSOLE
-// TEST[setup:twitter]
+// TEST[setup:my_index]
 
-[float]
+[discrete]
 [[global-search-timeout]]
 === Global Search Timeout
 
@@ -125,20 +123,17 @@ The setting key is `search.default_search_timeout` and can be set using the
 <<cluster-update-settings>> endpoints. The default value is no global timeout.
 Setting this value to `-1` resets the global search timeout to no timeout.
 
-[float]
+[discrete]
 [[global-search-cancellation]]
 === Search Cancellation
 
 Searches can be cancelled using standard <<task-cancellation,task cancellation>>
-mechanism. By default, a running search only checks if it is cancelled or
-not on segment boundaries, therefore the cancellation can be delayed by large
-segments. The search cancellation responsiveness can be improved by setting
-the dynamic cluster-level setting `search.low_level_cancellation` to `true`.
-However, it comes with an additional overhead of more frequent cancellation
-checks that can be noticeable on large fast running search queries. Changing this
-setting only affects the searches that start after the change is made.
+mechanism and are also automatically cancelled when the http connection used to
+perform the request is closed by the client. It is fundamental that the http
+client sending requests closes connections whenever requests time out or are
+aborted.
 
-[float]
+[discrete]
 [[search-concurrency-and-parallelism]]
 === Search concurrency and parallelism
 
@@ -159,9 +154,11 @@ high). This default value is `5`.
 
 include::search/search.asciidoc[]
 
-include::search/uri-request.asciidoc[]
+include::search/async-search.asciidoc[]
 
-include::search/request-body.asciidoc[]
+include::search/scroll-api.asciidoc[]
+
+include::search/clear-scroll-api.asciidoc[]
 
 include::search/search-template.asciidoc[]
 
@@ -170,6 +167,12 @@ include::search/search-shards.asciidoc[]
 include::search/suggesters.asciidoc[]
 
 include::search/multi-search.asciidoc[]
+
+include::eql/eql-search-api.asciidoc[]
+
+include::eql/get-async-eql-search-api.asciidoc[]
+
+include::eql/delete-async-eql-search-api.asciidoc[]
 
 include::search/count.asciidoc[]
 

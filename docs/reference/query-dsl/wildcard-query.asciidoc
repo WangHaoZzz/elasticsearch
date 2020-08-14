@@ -13,26 +13,25 @@ combine wildcard operators with other characters to create a wildcard pattern.
 [[wildcard-query-ex-request]]
 ==== Example request
 
-The following search returns documents where the `user` field contains a term
+The following search returns documents where the `user.id` field contains a term
 that begins with `ki` and ends with `y`. These matching terms can include `kiy`,
 `kity`, or `kimchy`.
 
-[source,js]
+[source,console]
 ----
 GET /_search
 {
-    "query": {
-        "wildcard": {
-            "user": {
-                "value": "ki*y",
-                "boost": 1.0,
-                "rewrite": "constant_score"
-            }
-        }
+  "query": {
+    "wildcard": {
+      "user.id": {
+        "value": "ki*y",
+        "boost": 1.0,
+        "rewrite": "constant_score"
+      }
     }
+  }
 }
 ----
-// CONSOLE
 
 [[wildcard-top-level-params]]
 ==== Top-level parameters for `wildcard`
@@ -57,7 +56,7 @@ the iterations needed to find matching terms and slow search performance.
 
 `boost`::
 (Optional, float) Floating point number used to decrease or increase the
-<<query-filter-context, relevance scores>> of a query. Defaults to `1.0`.
+<<relevance-scores,relevance scores>> of a query. Defaults to `1.0`.
 +
 You can use the `boost` parameter to adjust relevance scores for searches
 containing two or more queries.
@@ -69,3 +68,9 @@ increases the relevance score.
 `rewrite`::
 (Optional, string) Method used to rewrite the query. For valid values and more information, see the
 <<query-dsl-multi-term-rewrite, `rewrite` parameter>>.
+
+[[wildcard-query-notes]]
+==== Notes
+===== Allow expensive queries
+Wildcard queries will not be executed if <<query-dsl-allow-expensive-queries, `search.allow_expensive_queries`>>
+is set to false.

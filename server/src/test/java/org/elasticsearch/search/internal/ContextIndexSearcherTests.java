@@ -22,6 +22,7 @@ package org.elasticsearch.search.internal;
 import org.apache.lucene.analysis.standard.StandardAnalyzer;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.Field;
+import org.apache.lucene.document.IntPoint;
 import org.apache.lucene.document.StringField;
 import org.apache.lucene.index.DirectoryReader;
 import org.apache.lucene.index.FilterDirectoryReader;
@@ -35,15 +36,20 @@ import org.apache.lucene.index.NoMergePolicy;
 import org.apache.lucene.index.PostingsEnum;
 import org.apache.lucene.index.Term;
 import org.apache.lucene.index.TermsEnum;
+import org.apache.lucene.search.BoostQuery;
 import org.apache.lucene.search.BulkScorer;
+import org.apache.lucene.search.ConstantScoreQuery;
 import org.apache.lucene.search.DocIdSetIterator;
 import org.apache.lucene.search.Explanation;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.LeafCollector;
 import org.apache.lucene.search.MatchAllDocsQuery;
 import org.apache.lucene.search.Query;
+import org.apache.lucene.search.Scorable;
+import org.apache.lucene.search.ScoreMode;
 import org.apache.lucene.search.Scorer;
 import org.apache.lucene.search.TermQuery;
+import org.apache.lucene.search.TopDocs;
 import org.apache.lucene.search.Weight;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.util.Accountable;
@@ -71,6 +77,9 @@ import java.util.IdentityHashMap;
 import java.util.Set;
 
 import static org.elasticsearch.search.internal.ContextIndexSearcher.intersectScorerAndBitSet;
+import static org.elasticsearch.search.internal.ExitableDirectoryReader.ExitableLeafReader;
+import static org.elasticsearch.search.internal.ExitableDirectoryReader.ExitablePointValues;
+import static org.elasticsearch.search.internal.ExitableDirectoryReader.ExitableTerms;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.instanceOf;
 
@@ -107,16 +116,24 @@ public class ContextIndexSearcherTests extends ESTestCase {
         iw.close();
         DirectoryReader directoryReader = DirectoryReader.open(directory);
         IndexSearcher searcher = new IndexSearcher(directoryReader);
-        Weight weight = searcher.createWeight(new TermQuery(new Term("field2", "value1")),
-            org.apache.lucene.search.ScoreMode.COMPLETE_NO_SCORES, 1f);
+        Weight weight = searcher.createWeight(
+            new BoostQuery(new ConstantScoreQuery(new TermQuery(new Term("field2", "value1"))), 3f),
+            ScoreMode.COMPLETE, 1f);
 
         LeafReaderContext leaf = directoryReader.leaves().get(0);
 
         CombinedBitSet bitSet = new CombinedBitSet(query(leaf, "field1", "value1"), leaf.reader().getLiveDocs());
         LeafCollector leafCollector = new LeafBucketCollector() {
+            Scorable scorer;
+            @Override
+            public void setScorer(Scorable scorer) throws IOException {
+                this.scorer = scorer;
+            }
+
             @Override
             public void collect(int doc, long bucket) throws IOException {
                 assertThat(doc, equalTo(0));
+                assertThat(scorer.score(), equalTo(3f));
             }
         };
         intersectScorerAndBitSet(weight.scorer(leaf), bitSet, leafCollector, () -> {});
@@ -129,7 +146,6 @@ public class ContextIndexSearcherTests extends ESTestCase {
             }
         };
         intersectScorerAndBitSet(weight.scorer(leaf), bitSet, leafCollector,  () -> {});
-
 
         bitSet = new CombinedBitSet(query(leaf, "field1", "value3"), leaf.reader().getLiveDocs());
         leafCollector = new LeafBucketCollector() {
@@ -179,6 +195,8 @@ public class ContextIndexSearcherTests extends ESTestCase {
         doc.add(fooField);
         StringField deleteField = new StringField("delete", "no", Field.Store.NO);
         doc.add(deleteField);
+        IntPoint pointField = new IntPoint("point", 1, 2);
+        doc.add(pointField);
         w.addDocument(doc);
         if (deletions) {
             // add a document that matches foo:bar but will be deleted
@@ -222,8 +240,20 @@ public class ContextIndexSearcherTests extends ESTestCase {
         DocumentSubsetDirectoryReader filteredReader = new DocumentSubsetDirectoryReader(reader, cache, roleQuery);
 
         ContextIndexSearcher searcher = new ContextIndexSearcher(filteredReader, IndexSearcher.getDefaultSimilarity(),
-            IndexSearcher.getDefaultQueryCache(), IndexSearcher.getDefaultQueryCachingPolicy());
-        searcher.setCheckCancelled(() -> {});
+            IndexSearcher.getDefaultQueryCache(), IndexSearcher.getDefaultQueryCachingPolicy(), true);
+
+        // Assert wrapping
+        assertEquals(ExitableDirectoryReader.class, searcher.getIndexReader().getClass());
+        for (LeafReaderContext lrc : searcher.getIndexReader().leaves()) {
+            assertEquals(ExitableLeafReader.class, lrc.reader().getClass());
+            assertNotEquals(ExitableTerms.class, lrc.reader().terms("foo").getClass());
+            assertNotEquals(ExitablePointValues.class, lrc.reader().getPointValues("point").getClass());
+        }
+        searcher.addQueryCancellation(() -> {});
+        for (LeafReaderContext lrc : searcher.getIndexReader().leaves()) {
+            assertEquals(ExitableTerms.class, lrc.reader().terms("foo").getClass());
+            assertEquals(ExitablePointValues.class, lrc.reader().getPointValues("point").getClass());
+        }
 
         // Searching a non-existing term will trigger a null scorer
         assertEquals(0, searcher.count(new TermQuery(new Term("non_existing_field", "non_existing_value"))));
@@ -232,6 +262,12 @@ public class ContextIndexSearcherTests extends ESTestCase {
 
         // make sure scorers are created only once, see #1725
         assertEquals(1, searcher.count(new CreateScorerOnceQuery(new MatchAllDocsQuery())));
+
+        TopDocs topDocs = searcher.search(new BoostQuery(new ConstantScoreQuery(new TermQuery(new Term("foo", "bar"))), 3f), 1);
+        assertEquals(1, topDocs.totalHits.value);
+        assertEquals(1, topDocs.scoreDocs.length);
+        assertEquals(3f, topDocs.scoreDocs[0].score, 0);
+
         IOUtils.close(reader, w, dir);
     }
 

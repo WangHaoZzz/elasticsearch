@@ -30,7 +30,6 @@ import org.elasticsearch.search.aggregations.InternalAggregations;
 import org.elasticsearch.search.aggregations.InternalMultiBucketAggregation;
 import org.elasticsearch.search.aggregations.InternalOrder;
 import org.elasticsearch.search.aggregations.KeyComparable;
-import org.elasticsearch.search.aggregations.pipeline.PipelineAggregator;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -69,7 +68,7 @@ public abstract class InternalRareTerms<A extends InternalRareTerms<A, B>, B ext
         protected Bucket(StreamInput in, DocValueFormat formatter) throws IOException {
             this.format = formatter;
             docCount = in.readVLong();
-            aggregations = new InternalAggregations(in);
+            aggregations = InternalAggregations.readFrom(in);
         }
 
         @Override
@@ -89,19 +88,6 @@ public abstract class InternalRareTerms<A extends InternalRareTerms<A, B>, B ext
         @Override
         public Aggregations getAggregations() {
             return aggregations;
-        }
-
-        abstract B newBucket(long docCount, InternalAggregations aggs);
-
-        public B reduce(List<B> buckets, ReduceContext context) {
-            long docCount = 0;
-            List<InternalAggregations> aggregationsList = new ArrayList<>(buckets.size());
-            for (B bucket : buckets) {
-                docCount += bucket.docCount;
-                aggregationsList.add(bucket.aggregations);
-            }
-            InternalAggregations aggs = InternalAggregations.reduce(aggregationsList, context);
-            return newBucket(docCount, aggs);
         }
 
         @Override
@@ -135,9 +121,8 @@ public abstract class InternalRareTerms<A extends InternalRareTerms<A, B>, B ext
     protected final BucketOrder order;
     protected final long maxDocCount;
 
-    protected InternalRareTerms(String name, BucketOrder order, long maxDocCount,
-                            List<PipelineAggregator> pipelineAggregators, Map<String, Object> metaData) {
-        super(name, pipelineAggregators, metaData);
+    protected InternalRareTerms(String name, BucketOrder order, long maxDocCount, Map<String, Object> metadata) {
+        super(name, metadata);
         this.order = order;
         this.maxDocCount = maxDocCount;
     }
@@ -167,8 +152,23 @@ public abstract class InternalRareTerms<A extends InternalRareTerms<A, B>, B ext
     public abstract B getBucketByKey(String term);
 
     @Override
-    public InternalAggregation doReduce(List<InternalAggregation> aggregations, ReduceContext reduceContext) {
+    public InternalAggregation reduce(List<InternalAggregation> aggregations, ReduceContext reduceContext) {
         throw new UnsupportedOperationException();
+    }
+
+    abstract B createBucket(long docCount, InternalAggregations aggs, B prototype);
+
+    @Override
+    protected B reduceBucket(List<B> buckets, ReduceContext context) {
+        assert buckets.size() > 0;
+        long docCount = 0;
+        List<InternalAggregations> aggregationsList = new ArrayList<>(buckets.size());
+        for (B bucket : buckets) {
+            docCount += bucket.docCount;
+            aggregationsList.add(bucket.aggregations);
+        }
+        InternalAggregations aggs = InternalAggregations.reduce(aggregationsList, context);
+        return createBucket(docCount, aggs, buckets.get(0));
     }
 
     protected abstract A createWithFilter(String name, List<B> buckets, SetBackedScalingCuckooFilter filter);

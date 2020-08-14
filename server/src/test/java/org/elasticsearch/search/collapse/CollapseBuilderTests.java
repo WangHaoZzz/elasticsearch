@@ -20,12 +20,11 @@ package org.elasticsearch.search.collapse;
 
 import org.apache.lucene.analysis.MockAnalyzer;
 import org.apache.lucene.index.DirectoryReader;
-import org.apache.lucene.index.IndexOptions;
 import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.index.IndexWriter;
 import org.apache.lucene.search.Query;
+import org.apache.lucene.store.ByteBuffersDirectory;
 import org.apache.lucene.store.Directory;
-import org.apache.lucene.store.RAMDirectory;
 import org.elasticsearch.common.io.stream.NamedWriteableRegistry;
 import org.elasticsearch.common.io.stream.Writeable;
 import org.elasticsearch.common.settings.Settings;
@@ -34,18 +33,18 @@ import org.elasticsearch.common.xcontent.XContentParser;
 import org.elasticsearch.index.mapper.KeywordFieldMapper;
 import org.elasticsearch.index.mapper.MappedFieldType;
 import org.elasticsearch.index.mapper.NumberFieldMapper;
+import org.elasticsearch.index.mapper.TextSearchInfo;
 import org.elasticsearch.index.query.InnerHitBuilder;
 import org.elasticsearch.index.query.InnerHitBuilderTests;
 import org.elasticsearch.index.query.QueryShardContext;
-import org.elasticsearch.search.SearchContextException;
 import org.elasticsearch.search.SearchModule;
-import org.elasticsearch.search.internal.SearchContext;
 import org.elasticsearch.test.AbstractSerializingTestCase;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 import static java.util.Collections.emptyList;
@@ -138,69 +137,67 @@ public class CollapseBuilderTests extends AbstractSerializingTestCase<CollapseBu
         return xContentRegistry;
     }
 
-    private SearchContext mockSearchContext() {
-        SearchContext context = mock(SearchContext.class);
-        QueryShardContext shardContext = mock(QueryShardContext.class);
-        when(context.getQueryShardContext()).thenReturn(shardContext);
-        when(context.scrollContext()).thenReturn(null);
-        when(context.rescore()).thenReturn(null);
-        when(context.searchAfter()).thenReturn(null);
-        return context;
-    }
-
     public void testBuild() throws IOException {
-        Directory dir = new RAMDirectory();
+        Directory dir = new ByteBuffersDirectory();
         try (IndexWriter writer = new IndexWriter(dir, newIndexWriterConfig(new MockAnalyzer(random())))) {
             writer.commit();
         }
-        SearchContext searchContext = mockSearchContext();
+        QueryShardContext shardContext = mock(QueryShardContext.class);
         try (IndexReader reader = DirectoryReader.open(dir)) {
-            when(searchContext.getQueryShardContext().getIndexReader()).thenReturn(reader);
+            when(shardContext.getIndexReader()).thenReturn(reader);
+
             MappedFieldType numberFieldType =
-                new NumberFieldMapper.NumberFieldType(NumberFieldMapper.NumberType.LONG);
-            MappedFieldType keywordFieldType =
-                new KeywordFieldMapper.KeywordFieldType();
-            for (MappedFieldType fieldType : new MappedFieldType[] {numberFieldType, keywordFieldType}) {
-                fieldType.setName("field");
-                fieldType.setHasDocValues(true);
-                when(searchContext.getQueryShardContext().fieldMapper("field")).thenReturn(fieldType);
-                CollapseBuilder builder = new CollapseBuilder("field");
-                CollapseContext collapseContext = builder.build(searchContext);
-                assertEquals(collapseContext.getFieldType(), fieldType);
+                new NumberFieldMapper.NumberFieldType("field", NumberFieldMapper.NumberType.LONG);
+            when(shardContext.fieldMapper("field")).thenReturn(numberFieldType);
+            CollapseBuilder builder = new CollapseBuilder("field");
+            CollapseContext collapseContext = builder.build(shardContext);
+            assertEquals(collapseContext.getFieldType(), numberFieldType);
 
-                fieldType.setIndexOptions(IndexOptions.NONE);
-                collapseContext = builder.build(searchContext);
-                assertEquals(collapseContext.getFieldType(), fieldType);
+            numberFieldType =
+                new NumberFieldMapper.NumberFieldType("field", NumberFieldMapper.NumberType.LONG, true, false, Collections.emptyMap());
+            when(shardContext.fieldMapper("field")).thenReturn(numberFieldType);
+            IllegalArgumentException exc = expectThrows(IllegalArgumentException.class, () -> builder.build(shardContext));
+            assertEquals(exc.getMessage(), "cannot collapse on field `field` without `doc_values`");
 
-                fieldType.setHasDocValues(false);
-                SearchContextException exc = expectThrows(SearchContextException.class, () -> builder.build(searchContext));
-                assertEquals(exc.getMessage(), "cannot collapse on field `field` without `doc_values`");
+            numberFieldType =
+                new NumberFieldMapper.NumberFieldType("field", NumberFieldMapper.NumberType.LONG, false, true, Collections.emptyMap());
+            when(shardContext.fieldMapper("field")).thenReturn(numberFieldType);
+            builder.setInnerHits(new InnerHitBuilder());
+            exc = expectThrows(IllegalArgumentException.class, () -> builder.build(shardContext));
+            assertEquals(exc.getMessage(),
+                "cannot expand `inner_hits` for collapse field `field`, only indexed field can retrieve `inner_hits`");
 
-                fieldType.setHasDocValues(true);
-                builder.setInnerHits(new InnerHitBuilder());
-                exc = expectThrows(SearchContextException.class, () -> builder.build(searchContext));
-                assertEquals(exc.getMessage(),
-                    "cannot expand `inner_hits` for collapse field `field`, " +
-                        "only indexed field can retrieve `inner_hits`");
-            }
+            MappedFieldType keywordFieldType = new KeywordFieldMapper.KeywordFieldType("field");
+            when(shardContext.fieldMapper("field")).thenReturn(keywordFieldType);
+            CollapseBuilder kbuilder = new CollapseBuilder("field");
+            collapseContext = kbuilder.build(shardContext);
+            assertEquals(collapseContext.getFieldType(), keywordFieldType);
+
+            keywordFieldType = new KeywordFieldMapper.KeywordFieldType("field", true, false, Collections.emptyMap());
+            when(shardContext.fieldMapper("field")).thenReturn(keywordFieldType);
+            exc = expectThrows(IllegalArgumentException.class, () -> kbuilder.build(shardContext));
+            assertEquals(exc.getMessage(), "cannot collapse on field `field` without `doc_values`");
+
+            keywordFieldType = new KeywordFieldMapper.KeywordFieldType("field", false, true, Collections.emptyMap());
+            when(shardContext.fieldMapper("field")).thenReturn(keywordFieldType);
+            kbuilder.setInnerHits(new InnerHitBuilder());
+            exc = expectThrows(IllegalArgumentException.class, () -> builder.build(shardContext));
+            assertEquals(exc.getMessage(),
+                "cannot expand `inner_hits` for collapse field `field`, only indexed field can retrieve `inner_hits`");
+
         }
     }
 
-    public void testBuildWithSearchContextExceptions() {
-        SearchContext context = mockSearchContext();
+    public void testBuildWithExceptions() {
+        QueryShardContext shardContext = mock(QueryShardContext.class);
         {
             CollapseBuilder builder = new CollapseBuilder("unknown_field");
-            SearchContextException exc = expectThrows(SearchContextException.class, () -> builder.build(context));
+            IllegalArgumentException exc = expectThrows(IllegalArgumentException.class, () -> builder.build(shardContext));
             assertEquals(exc.getMessage(), "no mapping found for `unknown_field` in order to collapse on");
         }
 
         {
-            MappedFieldType fieldType = new MappedFieldType() {
-                @Override
-                public MappedFieldType clone() {
-                    return null;
-                }
-
+            MappedFieldType fieldType = new MappedFieldType("field", true, true, TextSearchInfo.NONE, Collections.emptyMap()) {
                 @Override
                 public String typeName() {
                     return null;
@@ -215,11 +212,9 @@ public class CollapseBuilderTests extends AbstractSerializingTestCase<CollapseBu
                     return null;
                 }
             };
-            fieldType.setName("field");
-            fieldType.setHasDocValues(true);
-            when(context.getQueryShardContext().fieldMapper("field")).thenReturn(fieldType);
+            when(shardContext.fieldMapper("field")).thenReturn(fieldType);
             CollapseBuilder builder = new CollapseBuilder("field");
-            SearchContextException exc = expectThrows(SearchContextException.class, () -> builder.build(context));
+            IllegalArgumentException exc = expectThrows(IllegalArgumentException.class, () -> builder.build(shardContext));
             assertEquals(exc.getMessage(), "unknown type for collapse field `field`, only keywords and numbers are accepted");
         }
     }

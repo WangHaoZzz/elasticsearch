@@ -36,18 +36,22 @@ import java.util.Collections;
 import java.util.List;
 import java.util.function.Predicate;
 
-import static org.elasticsearch.client.ml.dataframe.DataFrameAnalyticsSourceTests.randomSourceConfig;
 import static org.elasticsearch.client.ml.dataframe.DataFrameAnalyticsDestTests.randomDestConfig;
+import static org.elasticsearch.client.ml.dataframe.DataFrameAnalyticsSourceTests.randomSourceConfig;
 import static org.elasticsearch.client.ml.dataframe.OutlierDetectionTests.randomOutlierDetection;
 
 public class DataFrameAnalyticsConfigTests extends AbstractXContentTestCase<DataFrameAnalyticsConfig> {
 
     public static DataFrameAnalyticsConfig randomDataFrameAnalyticsConfig() {
         DataFrameAnalyticsConfig.Builder builder =
-            DataFrameAnalyticsConfig.builder(randomAlphaOfLengthBetween(1, 10))
+            DataFrameAnalyticsConfig.builder()
+                .setId(randomAlphaOfLengthBetween(1, 10))
                 .setSource(randomSourceConfig())
                 .setDest(randomDestConfig())
                 .setAnalysis(randomOutlierDetection());
+        if (randomBoolean()) {
+            builder.setDescription(randomAlphaOfLength(20));
+        }
         if (randomBoolean()) {
             builder.setAnalyzedFields(new FetchSourceContext(true,
                 generateRandomStringArray(10, 10, false, false),
@@ -61,6 +65,12 @@ public class DataFrameAnalyticsConfigTests extends AbstractXContentTestCase<Data
         }
         if (randomBoolean()) {
             builder.setVersion(Version.CURRENT);
+        }
+        if (randomBoolean()) {
+            builder.setAllowLazyStart(randomBoolean());
+        }
+        if (randomBoolean()) {
+            builder.setMaxNumThreads(randomIntBetween(1, 20));
         }
         return builder.build();
     }

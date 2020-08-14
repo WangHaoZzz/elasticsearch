@@ -20,35 +20,49 @@
 package org.elasticsearch.index.mapper;
 
 import com.carrotsearch.randomizedtesting.annotations.Timeout;
-
 import org.apache.lucene.index.DocValuesType;
 import org.apache.lucene.index.IndexableField;
+import org.elasticsearch.Version;
+import org.elasticsearch.action.index.IndexRequest;
+import org.elasticsearch.action.index.IndexResponse;
+import org.elasticsearch.cluster.metadata.IndexMetadata;
 import org.elasticsearch.common.Strings;
 import org.elasticsearch.common.bytes.BytesReference;
 import org.elasticsearch.common.compress.CompressedXContent;
+import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.xcontent.ToXContentObject;
 import org.elasticsearch.common.xcontent.XContentBuilder;
 import org.elasticsearch.common.xcontent.XContentFactory;
 import org.elasticsearch.common.xcontent.XContentType;
 import org.elasticsearch.index.mapper.NumberFieldMapper.NumberType;
 import org.elasticsearch.index.mapper.NumberFieldTypeTests.OutOfRangeSpec;
+import org.elasticsearch.index.termvectors.TermVectorsService;
+import org.elasticsearch.rest.RestStatus;
+import org.elasticsearch.search.lookup.SourceLookup;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.math.BigInteger;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 import static org.elasticsearch.common.xcontent.XContentFactory.jsonBuilder;
 import static org.hamcrest.Matchers.containsString;
 
-public class NumberFieldMapperTests extends AbstractNumericFieldMapperTestCase {
+public class NumberFieldMapperTests extends AbstractNumericFieldMapperTestCase<NumberFieldMapper.Builder> {
 
     @Override
     protected void setTypeList() {
         TYPES = new HashSet<>(Arrays.asList("byte", "short", "integer", "long", "float", "double", "half_float"));
         WHOLE_TYPES = new HashSet<>(Arrays.asList("byte", "short", "integer", "long"));
+    }
+
+    @Override
+    protected Set<String> unsupportedProperties() {
+        return Set.of("analyzer", "similarity");
     }
 
     @Override
@@ -61,7 +75,7 @@ public class NumberFieldMapperTests extends AbstractNumericFieldMapperTestCase {
 
         assertEquals(mapping, mapper.mappingSource().toString());
 
-        ParsedDocument doc = mapper.parse(new SourceToParse("test", "type", "1", BytesReference
+        ParsedDocument doc = mapper.parse(new SourceToParse("test", "1", BytesReference
                 .bytes(XContentFactory.jsonBuilder()
                         .startObject()
                         .field("field", 123)
@@ -89,7 +103,7 @@ public class NumberFieldMapperTests extends AbstractNumericFieldMapperTestCase {
 
         assertEquals(mapping, mapper.mappingSource().toString());
 
-        ParsedDocument doc = mapper.parse(new SourceToParse("test", "type", "1", BytesReference
+        ParsedDocument doc = mapper.parse(new SourceToParse("test", "1", BytesReference
                 .bytes(XContentFactory.jsonBuilder()
                         .startObject()
                         .field("field", 123)
@@ -112,7 +126,7 @@ public class NumberFieldMapperTests extends AbstractNumericFieldMapperTestCase {
 
         assertEquals(mapping, mapper.mappingSource().toString());
 
-        ParsedDocument doc = mapper.parse(new SourceToParse("test", "type", "1", BytesReference
+        ParsedDocument doc = mapper.parse(new SourceToParse("test", "1", BytesReference
                 .bytes(XContentFactory.jsonBuilder()
                         .startObject()
                         .field("field", 123)
@@ -136,7 +150,7 @@ public class NumberFieldMapperTests extends AbstractNumericFieldMapperTestCase {
 
         assertEquals(mapping, mapper.mappingSource().toString());
 
-        ParsedDocument doc = mapper.parse(new SourceToParse("test", "type", "1", BytesReference
+        ParsedDocument doc = mapper.parse(new SourceToParse("test", "1", BytesReference
                 .bytes(XContentFactory.jsonBuilder()
                         .startObject()
                         .field("field", 123)
@@ -165,7 +179,7 @@ public class NumberFieldMapperTests extends AbstractNumericFieldMapperTestCase {
 
         assertEquals(mapping, mapper.mappingSource().toString());
 
-        ParsedDocument doc = mapper.parse(new SourceToParse("test", "type", "1", BytesReference
+        ParsedDocument doc = mapper.parse(new SourceToParse("test", "1", BytesReference
                 .bytes(XContentFactory.jsonBuilder()
                         .startObject()
                         .field("field", "123")
@@ -188,7 +202,7 @@ public class NumberFieldMapperTests extends AbstractNumericFieldMapperTestCase {
 
         assertEquals(mapping, mapper2.mappingSource().toString());
 
-        ThrowingRunnable runnable = () -> mapper2.parse(new SourceToParse("test", "type", "1", BytesReference
+        ThrowingRunnable runnable = () -> mapper2.parse(new SourceToParse("test", "1", BytesReference
                 .bytes(XContentFactory.jsonBuilder()
                         .startObject()
                         .field("field", "123")
@@ -208,7 +222,7 @@ public class NumberFieldMapperTests extends AbstractNumericFieldMapperTestCase {
 
         assertEquals(mapping, mapper.mappingSource().toString());
 
-        ParsedDocument doc = mapper.parse(new SourceToParse("test", "type", "1", BytesReference
+        ParsedDocument doc = mapper.parse(new SourceToParse("test", "1", BytesReference
                 .bytes(XContentFactory.jsonBuilder()
                         .startObject()
                         .field("field", "7.89")
@@ -230,7 +244,7 @@ public class NumberFieldMapperTests extends AbstractNumericFieldMapperTestCase {
 
                 assertEquals(mapping, mapper.mappingSource().toString());
 
-                ThrowingRunnable runnable = () -> mapper.parse(new SourceToParse("test", "type", "1",
+                ThrowingRunnable runnable = () -> mapper.parse(new SourceToParse("test", "1",
                         BytesReference.bytes(jsonBuilder().startObject().field("field", malformedValue).endObject()), XContentType.JSON));
                 MapperParsingException e = expectThrows(MapperParsingException.class, runnable);
                 if (malformedValue instanceof String) {
@@ -245,12 +259,12 @@ public class NumberFieldMapperTests extends AbstractNumericFieldMapperTestCase {
 
                 DocumentMapper mapper2 = parser.parse("type", new CompressedXContent(mapping));
 
-                ParsedDocument doc = mapper2.parse(new SourceToParse("test", "type", "1",
+                ParsedDocument doc = mapper2.parse(new SourceToParse("test", "1",
                         BytesReference.bytes(jsonBuilder().startObject().field("field", malformedValue).endObject()), XContentType.JSON));
 
                 IndexableField[] fields = doc.rootDoc().getFields("field");
                 assertEquals(0, fields.length);
-                assertArrayEquals(new String[] { "field" }, doc.rootDoc().getValues("_ignored"));
+                assertArrayEquals(new String[] { "field" }, TermVectorsService.getValues(doc.rootDoc().getFields("_ignored")));
             }
         }
     }
@@ -274,7 +288,7 @@ public class NumberFieldMapperTests extends AbstractNumericFieldMapperTestCase {
                 assertEquals(mapping, mapper.mappingSource().toString());
 
                 MapperParsingException e = expectThrows(MapperParsingException.class,
-                        () -> mapper.parse(new SourceToParse("test", "type", "1",
+                        () -> mapper.parse(new SourceToParse("test", "1",
                                 BytesReference.bytes(jsonBuilder().startObject().field("field", malformedValue).endObject()),
                                 XContentType.JSON)));
                 assertThat(e.getCause().getMessage(), containsString("Current token"));
@@ -333,7 +347,7 @@ public class NumberFieldMapperTests extends AbstractNumericFieldMapperTestCase {
         DocumentMapper mapper = parser.parse("type", new CompressedXContent(mapping));
         assertEquals(mapping, mapper.mappingSource().toString());
 
-        ParsedDocument doc = mapper.parse(new SourceToParse("test", "type", "1", BytesReference
+        ParsedDocument doc = mapper.parse(new SourceToParse("test", "1", BytesReference
                 .bytes(XContentFactory.jsonBuilder()
                         .startObject()
                         .nullField("field")
@@ -360,7 +374,7 @@ public class NumberFieldMapperTests extends AbstractNumericFieldMapperTestCase {
         mapper = parser.parse("type", new CompressedXContent(mapping));
         assertEquals(mapping, mapper.mappingSource().toString());
 
-        doc = mapper.parse(new SourceToParse("test", "type", "1", BytesReference
+        doc = mapper.parse(new SourceToParse("test", "1", BytesReference
                 .bytes(XContentFactory.jsonBuilder()
                         .startObject()
                         .nullField("field")
@@ -390,6 +404,24 @@ public class NumberFieldMapperTests extends AbstractNumericFieldMapperTestCase {
             );
             assertThat(e.getMessage(), containsString("name cannot be empty string"));
         }
+    }
+
+    public void testParseSourceValue() {
+        Settings settings = Settings.builder().put(IndexMetadata.SETTING_VERSION_CREATED, Version.CURRENT.id).build();
+        Mapper.BuilderContext context = new Mapper.BuilderContext(settings, new ContentPath());
+
+        NumberFieldMapper mapper = new NumberFieldMapper.Builder("field", NumberType.INTEGER).build(context);
+        assertEquals(3, mapper.parseSourceValue(3.14, null));
+        assertEquals(42, mapper.parseSourceValue("42.9", null));
+
+        NumberFieldMapper nullValueMapper = new NumberFieldMapper.Builder("field", NumberType.FLOAT)
+            .nullValue(2.71f)
+            .build(context);
+        assertEquals(2.71f, (float) nullValueMapper.parseSourceValue("", null), 0.00001);
+
+        SourceLookup sourceLookup = new SourceLookup();
+        sourceLookup.setSource(Collections.singletonMap("field", null));
+        assertEquals(List.of(2.71f), nullValueMapper.lookupValues(sourceLookup, null));
     }
 
     @Timeout(millis = 30000)
@@ -453,8 +485,35 @@ public class NumberFieldMapperTests extends AbstractNumericFieldMapperTestCase {
         parseRequest(NumberType.LONG, createIndexRequest("-9223372036854775808.9"));
     }
 
+    public void testLongIndexingOutOfRange() throws Exception {
+        String mapping = Strings.toString(XContentFactory.jsonBuilder()
+            .startObject().startObject("_doc")
+            .startObject("properties")
+            .startObject("number")
+            .field("type", "long")
+            .field("ignore_malformed", true)
+            .endObject().endObject()
+            .endObject().endObject());
+        createIndex("test57287");
+        client().admin().indices().preparePutMapping("test57287").setSource(mapping, XContentType.JSON).get();
+        String doc = "{\"number\" : 9223372036854775808}";
+        IndexResponse response = client().index(new IndexRequest("test57287").source(doc, XContentType.JSON)).get();
+        assertTrue(response.status() == RestStatus.CREATED);
+    }
+
+    public void testDeprecatedSimilarityParameter() throws Exception {
+        String mapping = Strings.toString(XContentFactory.jsonBuilder().startObject().startObject("type").startObject("properties")
+            .startObject("field")
+            .field("type", "long")
+            .field("similarity", "bm25")
+            .endObject().endObject().endObject().endObject());
+
+        parser.parse("type", new CompressedXContent(mapping));
+        assertWarnings("The [similarity] parameter has no effect on field [field] and will be removed in 8.0");
+    }
+
     private void parseRequest(NumberType type, BytesReference content) throws IOException {
-        createDocumentMapper(type).parse(new SourceToParse("test", "type", "1", content, XContentType.JSON));
+        createDocumentMapper(type).parse(new SourceToParse("test", "1", content, XContentType.JSON));
     }
 
     private DocumentMapper createDocumentMapper(NumberType type) throws IOException {
@@ -482,5 +541,10 @@ public class NumberFieldMapperTests extends AbstractNumericFieldMapperTestCase {
         } else {
             return BytesReference.bytes(XContentFactory.jsonBuilder().startObject().field("field", value).endObject());
         }
+    }
+
+    @Override
+    protected NumberFieldMapper.Builder newBuilder() {
+        return new NumberFieldMapper.Builder("number", NumberType.LONG);
     }
 }

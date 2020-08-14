@@ -29,17 +29,16 @@ import org.elasticsearch.client.node.NodeClient;
 import org.elasticsearch.common.inject.Inject;
 import org.elasticsearch.common.io.stream.StreamInput;
 import org.elasticsearch.common.io.stream.StreamOutput;
-import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.xcontent.ToXContentObject;
 import org.elasticsearch.common.xcontent.XContentBuilder;
 import org.elasticsearch.rest.BaseRestHandler;
-import org.elasticsearch.rest.RestController;
 import org.elasticsearch.rest.RestRequest;
 import org.elasticsearch.rest.action.RestToXContentListener;
 import org.elasticsearch.tasks.Task;
 import org.elasticsearch.transport.TransportService;
 
 import java.io.IOException;
+import java.util.List;
 import java.util.Map;
 
 import static org.elasticsearch.ingest.common.IngestCommonPlugin.GROK_PATTERNS;
@@ -117,9 +116,10 @@ public class GrokProcessorGetAction extends ActionType<GrokProcessorGetAction.Re
     }
 
     public static class RestAction extends BaseRestHandler {
-        RestAction(Settings settings, RestController controller) {
-            super(settings);
-            controller.registerHandler(GET, "/_ingest/processor/grok", this);
+
+        @Override
+        public List<Route> routes() {
+            return List.of(new Route(GET, "/_ingest/processor/grok"));
         }
 
         @Override

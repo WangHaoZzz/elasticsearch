@@ -22,6 +22,7 @@ package org.elasticsearch.common.transport;
 import org.elasticsearch.common.io.stream.StreamInput;
 import org.elasticsearch.common.io.stream.StreamOutput;
 import org.elasticsearch.common.io.stream.Writeable;
+import org.elasticsearch.common.network.InetAddresses;
 
 import java.io.IOException;
 
@@ -29,8 +30,6 @@ import java.io.IOException;
  * A bounded transport address is a tuple of {@link TransportAddress}, one array that represents
  * the addresses the transport is bound to, and the other is the published one that represents the address clients
  * should communicate on.
- *
- *
  */
 public class BoundTransportAddress implements Writeable {
 
@@ -75,7 +74,12 @@ public class BoundTransportAddress implements Writeable {
     @Override
     public String toString() {
         StringBuilder builder = new StringBuilder("publish_address {");
-        builder.append(publishAddress);
+        String hostString = publishAddress.address().getHostString();
+        String publishAddressString = publishAddress.toString();
+        if (InetAddresses.isInetAddress(hostString) == false) {
+            publishAddressString = hostString + '/' + publishAddress.toString();
+        }
+        builder.append(publishAddressString);
         builder.append("}, bound_addresses ");
         boolean firstAdded = false;
         for (TransportAddress address : boundAddresses) {

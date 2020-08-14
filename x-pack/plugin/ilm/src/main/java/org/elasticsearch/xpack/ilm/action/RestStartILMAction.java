@@ -7,19 +7,21 @@
 package org.elasticsearch.xpack.ilm.action;
 
 import org.elasticsearch.client.node.NodeClient;
-import org.elasticsearch.common.settings.Settings;
-import org.elasticsearch.xpack.core.ilm.StartILMRequest;
 import org.elasticsearch.rest.BaseRestHandler;
-import org.elasticsearch.rest.RestController;
 import org.elasticsearch.rest.RestRequest;
 import org.elasticsearch.rest.action.RestToXContentListener;
+import org.elasticsearch.xpack.core.ilm.StartILMRequest;
 import org.elasticsearch.xpack.core.ilm.action.StartILMAction;
+
+import java.util.List;
+
+import static org.elasticsearch.rest.RestRequest.Method.POST;
 
 public class RestStartILMAction extends BaseRestHandler {
 
-    public RestStartILMAction(Settings settings, RestController controller) {
-        super(settings);
-        controller.registerHandler(RestRequest.Method.POST, "/_ilm/start", this);
+    @Override
+    public List<Route> routes() {
+        return List.of(new Route(POST, "/_ilm/start"));
     }
 
     @Override

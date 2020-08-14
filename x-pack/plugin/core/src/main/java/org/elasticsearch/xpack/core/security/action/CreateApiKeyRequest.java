@@ -6,6 +6,7 @@
 
 package org.elasticsearch.xpack.core.security.action;
 
+import org.elasticsearch.Version;
 import org.elasticsearch.action.ActionRequest;
 import org.elasticsearch.action.ActionRequestValidationException;
 import org.elasticsearch.action.support.WriteRequest;
@@ -44,18 +45,18 @@ public final class CreateApiKeyRequest extends ActionRequest {
      * @param expiration to specify expiration for the API key
      */
     public CreateApiKeyRequest(String name, @Nullable List<RoleDescriptor> roleDescriptors, @Nullable TimeValue expiration) {
-        if (Strings.hasText(name)) {
-            this.name = name;
-        } else {
-            throw new IllegalArgumentException("name must not be null or empty");
-        }
+        this.name = name;
         this.roleDescriptors = (roleDescriptors == null) ? List.of() : List.copyOf(roleDescriptors);
         this.expiration = expiration;
     }
 
     public CreateApiKeyRequest(StreamInput in) throws IOException {
         super(in);
-        this.name = in.readString();
+        if (in.getVersion().onOrAfter(Version.V_7_5_0)) {
+            this.name = in.readOptionalString();
+        } else {
+            this.name = in.readString();
+        }
         this.expiration = in.readOptionalTimeValue();
         this.roleDescriptors = List.copyOf(in.readList(RoleDescriptor::new));
         this.refreshPolicy = WriteRequest.RefreshPolicy.readFrom(in);
@@ -66,11 +67,7 @@ public final class CreateApiKeyRequest extends ActionRequest {
     }
 
     public void setName(String name) {
-        if (Strings.hasText(name)) {
-            this.name = name;
-        } else {
-            throw new IllegalArgumentException("name must not be null or empty");
-        }
+        this.name = name;
     }
 
     public TimeValue getExpiration() {
@@ -101,16 +98,16 @@ public final class CreateApiKeyRequest extends ActionRequest {
     public ActionRequestValidationException validate() {
         ActionRequestValidationException validationException = null;
         if (Strings.isNullOrEmpty(name)) {
-            validationException = addValidationError("name is required", validationException);
+            validationException = addValidationError("api key name is required", validationException);
         } else {
             if (name.length() > 256) {
-                validationException = addValidationError("name may not be more than 256 characters long", validationException);
+                validationException = addValidationError("api key name may not be more than 256 characters long", validationException);
             }
             if (name.equals(name.trim()) == false) {
-                validationException = addValidationError("name may not begin or end with whitespace", validationException);
+                validationException = addValidationError("api key name may not begin or end with whitespace", validationException);
             }
             if (name.startsWith("_")) {
-                validationException = addValidationError("name may not begin with an underscore", validationException);
+                validationException = addValidationError("api key name may not begin with an underscore", validationException);
             }
         }
         return validationException;
@@ -119,7 +116,11 @@ public final class CreateApiKeyRequest extends ActionRequest {
     @Override
     public void writeTo(StreamOutput out) throws IOException {
         super.writeTo(out);
-        out.writeString(name);
+        if (out.getVersion().onOrAfter(Version.V_7_5_0)) {
+            out.writeOptionalString(name);
+        } else {
+            out.writeString(name);
+        }
         out.writeOptionalTimeValue(expiration);
         out.writeList(roleDescriptors);
         refreshPolicy.writeTo(out);

@@ -1,9 +1,10 @@
-[[request-body-search-preference]]
-==== Preference
+[discrete]
+[[search-preference]]
+=== Preference
 
-Controls a `preference` of the shard copies on which to execute the search.  By
+You can use the `preference` parameter to control the shard copies on which a search runs. By
 default, Elasticsearch selects from the available shard copies in an
-unspecified order, taking the <<allocation-awareness,allocation awareness>> and
+unspecified order, taking the <<shard-allocation-awareness,allocation awareness>> and
 <<search-adaptive-replica,adaptive replica selection>> configuration into
 account. However, it may sometimes be desirable to try and route certain
 searches to certain sets of shard copies.
@@ -55,18 +56,17 @@ Custom (string) value::
 
 For instance, use the user's session ID `xyzabc123` as follows:
 
-[source,js]
+[source,console]
 ------------------------------------------------
 GET /_search?preference=xyzabc123
 {
-    "query": {
-        "match": {
-            "title": "elasticsearch"
-        }
+  "query": {
+    "match": {
+      "title": "elasticsearch"
     }
+  }
 }
 ------------------------------------------------
-// CONSOLE
 
 This can be an effective strategy to increase usage of e.g. the request cache for
 unique users running similar searches repeatedly by always hitting the same cache, while

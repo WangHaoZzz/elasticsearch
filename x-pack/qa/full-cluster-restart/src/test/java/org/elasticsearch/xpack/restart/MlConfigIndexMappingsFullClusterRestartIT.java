@@ -10,11 +10,17 @@ import org.elasticsearch.client.Request;
 import org.elasticsearch.client.Response;
 import org.elasticsearch.client.ResponseException;
 import org.elasticsearch.common.Strings;
+import org.elasticsearch.common.bytes.BytesArray;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.unit.TimeValue;
 import org.elasticsearch.common.util.concurrent.ThreadContext;
+import org.elasticsearch.common.xcontent.LoggingDeprecationHandler;
+import org.elasticsearch.common.xcontent.NamedXContentRegistry;
+import org.elasticsearch.common.xcontent.XContentParser;
+import org.elasticsearch.common.xcontent.json.JsonXContent;
 import org.elasticsearch.common.xcontent.support.XContentMapValues;
 import org.elasticsearch.upgrades.AbstractFullClusterRestartTestCase;
+import org.elasticsearch.xpack.core.ml.MlConfigIndex;
 import org.elasticsearch.xpack.core.ml.job.config.AnalysisConfig;
 import org.elasticsearch.xpack.core.ml.job.config.DataDescription;
 import org.elasticsearch.xpack.core.ml.job.config.Detector;
@@ -27,11 +33,11 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
 import static org.hamcrest.Matchers.equalTo;
+import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.nullValue;
 
@@ -39,15 +45,6 @@ public class MlConfigIndexMappingsFullClusterRestartIT extends AbstractFullClust
 
     private static final String OLD_CLUSTER_JOB_ID = "ml-config-mappings-old-cluster-job";
     private static final String NEW_CLUSTER_JOB_ID = "ml-config-mappings-new-cluster-job";
-
-    private static final Map<String, Object> EXPECTED_DATA_FRAME_ANALYSIS_MAPPINGS =
-        mapOf(
-            "properties", mapOf(
-                "outlier_detection", mapOf(
-                    "properties", mapOf(
-                        "method", mapOf("type", "keyword"),
-                        "n_neighbors", mapOf("type", "integer"),
-                        "feature_influence_threshold", mapOf("type", "double")))));
 
     @Override
     protected Settings restClientSettings() {
@@ -64,22 +61,32 @@ public class MlConfigIndexMappingsFullClusterRestartIT extends AbstractFullClust
     }
 
     public void testMlConfigIndexMappingsAfterMigration() throws Exception {
+        Map<String, Object> expectedConfigIndexMappings = loadConfigIndexMappings();
         if (isRunningAgainstOldCluster()) {
             assertThatMlConfigIndexDoesNotExist();
             // trigger .ml-config index creation
             createAnomalyDetectorJob(OLD_CLUSTER_JOB_ID);
             if (getOldClusterVersion().onOrAfter(Version.V_7_3_0)) {
-                // .ml-config has correct mappings from the start
-                assertThat(mappingsForDataFrameAnalysis(), is(equalTo(EXPECTED_DATA_FRAME_ANALYSIS_MAPPINGS)));
+                // .ml-config has mappings for analytics as the feature was introduced in 7.3.0
+                assertThat(getDataFrameAnalysisMappings().keySet(), hasItem("outlier_detection"));
             } else {
                 // .ml-config does not yet have correct mappings, it will need an update after cluster is upgraded
-                assertThat(mappingsForDataFrameAnalysis(), is(nullValue()));
+                assertThat(getDataFrameAnalysisMappings(), is(nullValue()));
             }
         } else {
             // trigger .ml-config index mappings update
             createAnomalyDetectorJob(NEW_CLUSTER_JOB_ID);
             // assert that the mappings are updated
-            assertThat(mappingsForDataFrameAnalysis(), is(equalTo(EXPECTED_DATA_FRAME_ANALYSIS_MAPPINGS)));
+            Map<String, Object> configIndexMappings = getConfigIndexMappings();
+
+            // Remove renamed fields
+            if (getOldClusterVersion().before(Version.V_8_0_0)) {
+                configIndexMappings = XContentMapValues.filter(expectedConfigIndexMappings, null, new String[] {
+                    "analysis.properties.*.properties.maximum_number_trees" // This was renamed to max_trees
+                });
+            }
+
+            assertThat(configIndexMappings, equalTo(expectedConfigIndexMappings));
         }
     }
 
@@ -90,8 +97,7 @@ public class MlConfigIndexMappingsFullClusterRestartIT extends AbstractFullClust
     }
 
     private void createAnomalyDetectorJob(String jobId) throws IOException {
-        Detector.Builder detector = new Detector.Builder("metric", "responsetime")
-            .setByFieldName("airline");
+        Detector.Builder detector = new Detector.Builder("metric", "responsetime");
         AnalysisConfig.Builder analysisConfig = new AnalysisConfig.Builder(Collections.singletonList(detector.build()))
             .setBucketSpan(TimeValue.timeValueMinutes(10));
         Job.Builder job = new Job.Builder(jobId)
@@ -105,7 +111,7 @@ public class MlConfigIndexMappingsFullClusterRestartIT extends AbstractFullClust
     }
 
     @SuppressWarnings("unchecked")
-    private Map<String, Object> mappingsForDataFrameAnalysis() throws Exception {
+    private Map<String, Object> getConfigIndexMappings() throws Exception {
         Request getIndexMappingsRequest = new Request("GET", ".ml-config/_mappings");
         Response getIndexMappingsResponse = client().performRequest(getIndexMappingsRequest);
         assertThat(getIndexMappingsResponse.getStatusLine().getStatusCode(), equalTo(200));
@@ -115,21 +121,25 @@ public class MlConfigIndexMappingsFullClusterRestartIT extends AbstractFullClust
         if (mappings.containsKey("doc")) {
             mappings = (Map<String, Object>) XContentMapValues.extractValue(mappings, "doc");
         }
-        mappings = (Map<String, Object>) XContentMapValues.extractValue(mappings, "properties", "analysis");
+        mappings = (Map<String, Object>) XContentMapValues.extractValue(mappings, "properties");
         return mappings;
     }
 
-    private static <K, V> Map<K, V> mapOf(K k1, V v1) {
-        Map<K, V> map = new HashMap<>();
-        map.put(k1, v1);
-        return map;
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> getDataFrameAnalysisMappings() throws Exception {
+        Map<String, Object> mappings = getConfigIndexMappings();
+        mappings = (Map<String, Object>) XContentMapValues.extractValue(mappings, "analysis", "properties");
+        return mappings;
     }
 
-    private static <K, V> Map<K, V> mapOf(K k1, V v1, K k2, V v2, K k3, V v3) {
-        Map<K, V> map = new HashMap<>();
-        map.put(k1, v1);
-        map.put(k2, v2);
-        map.put(k3, v3);
-        return map;
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> loadConfigIndexMappings() throws IOException {
+        String mapping = MlConfigIndex.mapping();
+        try (XContentParser parser = JsonXContent.jsonXContent.createParser(
+                NamedXContentRegistry.EMPTY, LoggingDeprecationHandler.INSTANCE, new BytesArray(mapping).streamInput())) {
+            Map<String, Object> mappings = parser.map();
+            mappings = (Map<String, Object>) XContentMapValues.extractValue(mappings, "_doc", "properties");
+            return mappings;
+        }
     }
 }
